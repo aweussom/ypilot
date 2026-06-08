@@ -72,6 +72,18 @@
     }
     #settings input[type=range] { accent-color: #4488ff; cursor: pointer; width: 160px; }
     #settings #grav-val { color: #00ffff; min-width: 3.4em; text-align: right; }
+    #settings select {
+      background: #0a0e1a;
+      color: #00ffff;
+      border: 1px solid rgba(68, 136, 255, 0.5);
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 12px;
+      padding: 2px 4px;
+      max-width: 240px;
+      cursor: pointer;
+    }
+    #settings .sep { color: rgba(68, 136, 255, 0.4); }
 </style>
 </head>
 <body>
@@ -82,6 +94,9 @@
     <div class="p2" id="score-p2">P2  0</div>
   </div>
   <div id="settings">
+    <label for="map-select">Kart</label>
+    <select id="map-select"></select>
+    <span class="sep">·</span>
     <label for="grav">Gravitasjon</label>
     <input id="grav" type="range" min="0" max="0.5" step="0.005" value="0" autocomplete="off">
     <span id="grav-val">0.000</span>

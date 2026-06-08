@@ -32,7 +32,15 @@ const COLORS = {
   wall: 0x4488ff,  // kjølig neon-blå
 };
 
-const BLOCK = 32;  // piksler per kartrute
+const BLOCK = 32;  // piksler per kartrute (verdens-enhet — alltid 32, uansett kart)
+
+// Fast viewport. Kameraet zoomer (≤1) for å vise hele kartet, sentrert. Verdens-
+// koordinater bruker alltid BLOCK=32 så fysikk/skip-følelse er identisk på alle kart.
+const VIEW_W = 1024;
+const VIEW_H = 768;
+// Kart som ville gjort skipet mindre enn dette på skjermen er «kun nettverk»
+// (utelatt fra lokal kart-velger). Se memory lokal-vs-nettverk-kart.
+const MIN_SHIP_PX = 9;
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
@@ -54,6 +62,7 @@ function setupGravityControl() {
   let saved = NaN;
   try { saved = parseFloat(localStorage.getItem(GRAVITY_KEY)); } catch (e) { /* privat modus */ }
   if (!Number.isNaN(saved)) GRAVITY = clampGravity(saved);
+  else GRAVITY = clampGravity((MAP && MAP.gravity) || 0);   // per-kart default
 
   const slider = document.getElementById('grav');
   const out = document.getElementById('grav-val');
@@ -110,7 +119,104 @@ function buildTestMap() {
   };
 }
 
-const MAP = buildTestMap();
+/* ----------------------------------------------------------------------------
+ * parseMap — leser ekte XPilot `.map`-tekst til SAMME form som buildTestMap().
+ * Header er case-insensitiv; mapData-delimiteren leses fra selve linja (varierer
+ * mellom kart). Rader paddes til mapwidth. Baser (`_`/`0`-`9`) → spawns.
+ * Se CLAUDE.md §Kart-format og memory xpilot-kartformat.
+ * ------------------------------------------------------------------------- */
+function parseMap(text, fallbackName) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const header = {};
+  let delimiter = 'EndOfMapdata', mapDataLine = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (/^mapdata\s*:/i.test(t)) {
+      const m = t.match(/multiline\s*:\s*(\S+)/i);
+      if (m) delimiter = m[1];
+      mapDataLine = i;
+      break;
+    }
+    if (!t || t[0] === '#') continue;                  // kommentar/blank
+    const kv = t.match(/^([^:]+?)\s*:\s*(.*)$/);
+    if (kv) header[kv[1].trim().toLowerCase()] = kv[2].trim();   // siste vinner
+  }
+
+  // Grid-rader til delimiter-linja (case-insensitivt).
+  const grid = [];
+  for (let j = mapDataLine + 1; j < lines.length; j++) {
+    if (lines[j].trim().toLowerCase() === delimiter.toLowerCase()) break;
+    grid.push(lines[j]);
+  }
+
+  const R = parseInt(header.mapheight, 10) || grid.length;
+  let C = parseInt(header.mapwidth, 10) || 0;
+  if (!C) for (const row of grid) C = Math.max(C, row.length);
+
+  const tiles = [];
+  for (let r = 0; r < R; r++) {
+    const src = grid[r] || '';
+    const row = new Array(C);
+    for (let c = 0; c < C; c++) { const ch = src[c]; row[c] = (ch && ch !== '\t') ? ch : ' '; }
+    tiles.push(row);
+  }
+
+  // Spawns fra baser; angle peker mot kartsenteret.
+  const cx = (C * BLOCK) / 2, cy = (R * BLOCK) / 2;
+  const spawns = [];
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    const ch = tiles[r][c];
+    if (ch === '_' || (ch >= '0' && ch <= '9')) {
+      const x = (c + 0.5) * BLOCK, y = (r + 0.5) * BLOCK;
+      spawns.push({ x, y, angle: Math.atan2(cy - y, cx - x) });
+    }
+  }
+  if (spawns.length === 0) {            // fallback: kvart-punkter
+    for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]]) {
+      const x = fx * C * BLOCK, y = fy * R * BLOCK;
+      spawns.push({ x, y, angle: Math.atan2(cy - y, cx - x) });
+    }
+  }
+
+  // Gravitasjon fra header — kun hvis innenfor vår skala (ellers 0; tunes med slider).
+  let gravity = 0;
+  const g = parseFloat(header.gravity);
+  if (!Number.isNaN(g) && Math.abs(g) <= GRAVITY_MAX) gravity = Math.abs(g);
+
+  const wrap = (header.edgewrap || '').toLowerCase() !== 'no'
+            && (header.edgebounce || '').toLowerCase() !== 'yes';
+
+  return {
+    cols: C, rows: R, blockSize: BLOCK,
+    widthPx: C * BLOCK, heightPx: R * BLOCK,
+    tiles, edgewrap: wrap, gravity,
+    spawns, name: header.mapname || fallbackName || 'kart', header,
+  };
+}
+
+// Kamera-zoom for å vise hele kartet (≤ 1).
+function mapZoom(map) { return Math.min(1, VIEW_W / map.widthPx, VIEW_H / map.heightPx); }
+
+// Lokalt spillbart hvis skipet ikke blir for lite på skjermen ved full kart-zoom.
+function isLocallyPlayable(wTiles, hTiles) {
+  const zoom = Math.min(1, VIEW_W / (wTiles * BLOCK), VIEW_H / (hTiles * BLOCK));
+  return BLOCK * zoom >= MIN_SHIP_PX;
+}
+
+// Laster valgt kart (filnavn relativt til maps/), eller testbanen.
+async function loadMap(sel) {
+  if (!sel || sel === 'test') return buildTestMap();
+  try {
+    const text = await fetch('maps/' + sel).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+    return parseMap(text, sel);
+  } catch (e) {
+    console.warn('Kunne ikke laste kart', sel, '— bruker testbane.', e);
+    return buildTestMap();
+  }
+}
+
+let MAP = buildTestMap();
 
 /* ----------------------------------------------------------------------------
  * Kart-hjelpere
@@ -228,6 +334,18 @@ class Bullet {
   }
 }
 
+// Input-provider fra tastatur: returnerer {thrust,left,right,fire,shield} per kall.
+// AI (Fase 2 / Increment 2) leverer samme grensesnitt gjennom samme sømpunkt.
+function keyboardInput(keys) {
+  return () => ({
+    thrust: keys.thrust.isDown,
+    left:   keys.left.isDown,
+    right:  keys.right.isDown,
+    fire:   keys.fire.isDown,
+    shield: keys.shield ? keys.shield.isDown : false,
+  });
+}
+
 /* ----------------------------------------------------------------------------
  * Ship
  * ------------------------------------------------------------------------- */
@@ -235,7 +353,8 @@ class Ship {
   constructor(scene, opts) {
     this.scene = scene;
     this.color = opts.color;
-    this.keys = opts.keys;
+    // Input-sømpunkt: tastatur (default) eller AI-provider leverer samme signaler.
+    this.input = opts.inputProvider || keyboardInput(opts.keys);
     this.spawn = opts.spawn;
     this.kills = 0;
     this.deaths = 0;
@@ -293,14 +412,14 @@ class Ship {
       return;
     }
 
-    const k = this.keys;
+    const input = this.input();
 
     // Rotasjon
-    if (k.left.isDown)  this.angle -= PHYSICS.turnRate * dtScale;
-    if (k.right.isDown) this.angle += PHYSICS.turnRate * dtScale;
+    if (input.left)  this.angle -= PHYSICS.turnRate * dtScale;
+    if (input.right) this.angle += PHYSICS.turnRate * dtScale;
 
     // Gass — newtonsk akselerasjon langs nesen, ingen friksjon.
-    const thrusting = k.thrust.isDown;
+    const thrusting = input.thrust;
     if (thrusting) {
       this.vx += Math.cos(this.angle) * PHYSICS.thrustForce * dtScale;
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
@@ -341,7 +460,7 @@ class Ship {
 
     // Skyting
     this.fireTimer -= dtScale;
-    if (k.fire.isDown && this.fireTimer <= 0) {
+    if (input.fire && this.fireTimer <= 0) {
       this.fire();
       this.fireTimer = PHYSICS.fireCooldown;
     }
@@ -381,6 +500,10 @@ class GameScene extends Phaser.Scene {
   create() {
     this.map = MAP;
 
+    // Kamera: zoom for å vise hele kartet (≤1), sentrert. Verden kan være > viewport.
+    this.cameras.main.setZoom(mapZoom(this.map));
+    this.cameras.main.centerOn(this.map.widthPx / 2, this.map.heightPx / 2);
+
     makeTextures(this);
     renderMap(this, this.map);
 
@@ -405,20 +528,19 @@ class GameScene extends Phaser.Scene {
     kb.addCapture('SPACE,UP,DOWN,LEFT,RIGHT');
     const keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,ENTER');
 
-    // To skip — lokal multiplayer på samme tastatur.
+    // To skip — lokal multiplayer på samme tastatur. Spawns loopes over kartets baser.
     // P1: W gass / A,D rotér / S skjold (Fase 2) / SPACE fyr.
     // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
-    this.ship1 = new Ship(this, {
-      color: COLORS.p1,
-      spawn: this.map.spawns[0],
-      keys: { thrust: keys.W, left: keys.A, right: keys.D, fire: keys.SPACE, shield: keys.S },
-    });
-    this.ship2 = new Ship(this, {
-      color: COLORS.p2,
-      spawn: this.map.spawns[3],
-      keys: { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN },
-    });
-    this.ships = [this.ship1, this.ship2];
+    const players = [
+      { color: COLORS.p1, keys: { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S } },
+      { color: COLORS.p2, keys: { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN } },
+    ];
+    const spawns = this.map.spawns;
+    this.ships = players.map((p, i) => new Ship(this, {
+      color: p.color, keys: p.keys, spawn: spawns[i % spawns.length],
+    }));
+    this.ship1 = this.ships[0];
+    this.ship2 = this.ships[1];
 
     // Kollisjoner — Phaser Arcade for entitet-mot-entitet (vegger er grid-basert).
     this.physics.add.overlap(this.ship1.sprite, this.ship2.sprite, () => {
@@ -465,16 +587,52 @@ class GameScene extends Phaser.Scene {
 }
 
 /* ----------------------------------------------------------------------------
- * Boot
+ * Boot — laster valgt kart (async) før Phaser startes. Canvas = fast viewport;
+ * kameraet zoomer for å vise hele kartet.
  * ------------------------------------------------------------------------- */
-setupGravityControl();
+const MAP_KEY = 'jpilot.map';
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: 'game',
-  width: MAP.widthPx,
-  height: MAP.heightPx,
-  backgroundColor: '#05060a',
-  physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
-  scene: [GameScene],
-});
+async function boot() {
+  let sel = 'test';
+  try { sel = localStorage.getItem(MAP_KEY) || 'test'; } catch (e) { /* privat modus */ }
+  MAP = await loadMap(sel);
+
+  setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
+  setupMapSelector(sel);
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'game',
+    width: VIEW_W,
+    height: VIEW_H,
+    backgroundColor: '#05060a',
+    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+    scene: [GameScene],
+  });
+}
+
+// Fyller kart-velgeren fra manifestet (kun lokalt spillbare kart), reload ved valg.
+async function setupMapSelector(current) {
+  const sel = document.getElementById('map-select');
+  if (!sel) return;
+  const addOpt = (val, label) => {
+    const o = document.createElement('option');
+    o.value = val; o.textContent = label;
+    if (val === current) o.selected = true;
+    sel.appendChild(o);
+  };
+  addOpt('test', 'Testbane');
+  try {
+    const list = await fetch('maps/index.json').then(r => r.json());
+    list
+      .filter(m => m.w && m.h && isLocallyPlayable(m.w, m.h))
+      .sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file))
+      .forEach(m => addOpt(m.file, `${m.name || m.file}  (${m.w}×${m.h})`));
+  } catch (e) { console.warn('Fant ikke maps/index.json', e); }
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem(MAP_KEY, sel.value); } catch (e) { /* privat modus */ }
+    location.reload();
+  });
+}
+
+boot();
