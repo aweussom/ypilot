@@ -24,6 +24,7 @@ const PHYSICS = {
   bulletLife:   120,    // frames (~2s)
   fireCooldown: 13,     // frames mellom skudd
   respawnDelay: 180,    // frames (~3s)
+  spawnInvuln:  36,     // frames (~0.6s) usårbar etter respawn
 };
 
 const COLORS = {
@@ -346,6 +347,80 @@ function keyboardInput(keys) {
   });
 }
 
+// Velg de n spawnene som ligger lengst fra hverandre (for n=2: paret med størst avstand).
+// Hindrer at skip spawner oppå hverandre på kart med klyngede baser.
+function pickSpawns(spawns, n) {
+  if (spawns.length <= n) return spawns.slice();
+  if (n === 2) {
+    let best = [spawns[0], spawns[1]], bestD = -1;
+    for (let i = 0; i < spawns.length; i++)
+      for (let j = i + 1; j < spawns.length; j++) {
+        const d = Math.hypot(spawns[i].x - spawns[j].x, spawns[i].y - spawns[j].y);
+        if (d > bestD) { bestD = d; best = [spawns[i], spawns[j]]; }
+      }
+    return best;
+  }
+  return spawns.slice(0, n);
+}
+
+// Fri siktelinje fra (sx,sy) langs (dx,dy) til avstand dist — ingen vegg mellom.
+function lineClear(map, sx, sy, dx, dy, dist) {
+  const steps = Math.max(1, Math.ceil(dist / (map.blockSize / 2)));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    if (tileAt(map, sx + dx * t, sy + dy * t) === 'x') return false;
+  }
+  return true;
+}
+
+// Heuristisk AI (Increment 2): styr mot motstander, unngå vegger, skyt med fri sikt.
+// Samme {thrust,left,right,fire,shield}-grensesnitt som tastatur (inputProvider-søm).
+// Increment 3 (Gemini Nano-enriching) gir smartere posisjonering oppå dette.
+function makeAIProvider(self, target, map) {
+  return () => {
+    const cmd = { thrust: false, left: false, right: false, fire: false, shield: false };
+    if (!self.alive || !target.alive) return cmd;
+
+    // Retning til mål — korteste vei med wrap.
+    let dx = target.x - self.x, dy = target.y - self.y;
+    const W = map.widthPx, H = map.heightPx;
+    if (map.edgewrap) {
+      if (Math.abs(dx) > W / 2) dx -= Math.sign(dx) * W;
+      if (Math.abs(dy) > H / 2) dy -= Math.sign(dy) * H;
+    }
+    const dist = Math.hypot(dx, dy);
+    const bearing = Math.atan2(dy, dx);
+
+    // Vegg-føler ~2 blokker fram langs nesen.
+    const look = map.blockSize * 2;
+    const wallAhead = tileAt(map, self.x + Math.cos(self.angle) * look, self.y + Math.sin(self.angle) * look) === 'x';
+
+    // Ønsket retning: mot mål, men vri bort fra vegg om den er rett foran.
+    let desired = bearing;
+    if (wallAhead) {
+      const leftWall = tileAt(map, self.x + Math.cos(self.angle - 0.6) * look, self.y + Math.sin(self.angle - 0.6) * look) === 'x';
+      desired = self.angle + (leftWall ? 0.8 : -0.8);
+    }
+
+    // Roter korteste vei mot ønsket retning.
+    let da = desired - self.angle;
+    while (da > Math.PI) da -= 2 * Math.PI;
+    while (da < -Math.PI) da += 2 * Math.PI;
+    if (da > 0.06) cmd.right = true;
+    else if (da < -0.06) cmd.left = true;
+
+    const aimed = Math.abs(da) < 0.4;
+    // Gass når omtrent siktet, ikke vegg foran, og ikke for nær (hold litt avstand).
+    if (!wallAhead && aimed && dist > map.blockSize * 3) cmd.thrust = true;
+
+    // Skyt: godt siktet, innen rekkevidde, fri siktelinje.
+    if (aimed && Math.abs(da) < 0.12 && dist < map.blockSize * 30 && lineClear(map, self.x, self.y, dx, dy, dist)) {
+      cmd.fire = true;
+    }
+    return cmd;
+  };
+}
+
 /* ----------------------------------------------------------------------------
  * Ship
  * ------------------------------------------------------------------------- */
@@ -362,6 +437,7 @@ class Ship {
     this.vx = 0; this.vy = 0;
     this.angle = this.spawn.angle;
     this.alive = true;
+    this.invuln = 0;
     this.fireTimer = 0;
     this.respawnTimer = 0;
 
@@ -397,9 +473,11 @@ class Ship {
     this.sprite.setPosition(this.spawn.x, this.spawn.y);
     this.sprite.setRotation(this.angle);
     this.sprite.setVisible(true);
+    this.sprite.setAlpha(0.5);            // halvtransparent mens usårbar
     this.sprite.body.enable = true;
     this.vx = 0; this.vy = 0;
     this.alive = true;
+    this.invuln = PHYSICS.spawnInvuln;
   }
 
   update(dtScale) {
@@ -410,6 +488,12 @@ class Ship {
         this.applySpawn();
       }
       return;
+    }
+
+    // Respawn-usårbarhet (blink), så tette spawns ikke gir krasj-loop.
+    if (this.invuln > 0) {
+      this.invuln -= dtScale;
+      if (this.invuln <= 0) this.sprite.setAlpha(1);
     }
 
     const input = this.input();
@@ -480,7 +564,7 @@ class Ship {
   }
 
   die() {
-    if (!this.alive) return;
+    if (!this.alive || this.invuln > 0) return;
     this.alive = false;
     this.deaths++;
     this.thrust.emitting = false;
@@ -535,12 +619,18 @@ class GameScene extends Phaser.Scene {
       { color: COLORS.p1, keys: { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S } },
       { color: COLORS.p2, keys: { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN } },
     ];
-    const spawns = this.map.spawns;
+    // Velg spawns lengst fra hverandre (unngår at skip spawner oppå hverandre).
+    const spawns = pickSpawns(this.map.spawns, players.length);
     this.ships = players.map((p, i) => new Ship(this, {
       color: p.color, keys: p.keys, spawn: spawns[i % spawns.length],
     }));
     this.ship1 = this.ships[0];
     this.ship2 = this.ships[1];
+
+    // AI-motstander på P2 (default på). Overstyrer input-sømpunktet med AI-provider.
+    let aiOn = true;
+    try { aiOn = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
+    if (aiOn) this.ship2.input = makeAIProvider(this.ship2, this.ship1, this.map);
 
     // Kollisjoner — Phaser Arcade for entitet-mot-entitet (vegger er grid-basert).
     this.physics.add.overlap(this.ship1.sprite, this.ship2.sprite, () => {
@@ -599,6 +689,7 @@ async function boot() {
 
   setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
   setupMapSelector(sel);
+  setupAIToggle();
 
   new Phaser.Game({
     type: Phaser.AUTO,
@@ -631,6 +722,18 @@ async function setupMapSelector(current) {
   } catch (e) { console.warn('Fant ikke maps/index.json', e); }
   sel.addEventListener('change', () => {
     try { localStorage.setItem(MAP_KEY, sel.value); } catch (e) { /* privat modus */ }
+    location.reload();
+  });
+}
+
+// AI-motstander-toggle (P2). Reload ved endring (skip opprettes ved boot).
+function setupAIToggle() {
+  const cb = document.getElementById('ai-toggle');
+  if (!cb) return;
+  let on = true; try { on = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
+  cb.checked = on;
+  cb.addEventListener('change', () => {
+    try { localStorage.setItem('jpilot.ai', cb.checked ? 'on' : 'off'); } catch (e) { /* privat modus */ }
     location.reload();
   });
 }
