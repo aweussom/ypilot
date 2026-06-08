@@ -25,6 +25,8 @@ const PHYSICS = {
   fireCooldown: 13,     // frames mellom skudd
   respawnDelay: 180,    // frames (~3s)
   spawnInvuln:  36,     // frames (~0.6s) usårbar etter respawn
+  blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker)
+  blastForce:   6,      // px/frame impuls ved episenter
 };
 
 const COLORS = {
@@ -603,6 +605,24 @@ class Ship {
     this.scene.explosion.explode(28, this.x, this.y);
     this.marker.setVisible(true);
     this.countText.setVisible(true);
+
+    // Blast-push: eksplosjonen dytter nærliggende levende skip radielt vekk (avtar med
+    // avstand). MER dytt om motstander har skjold på (Fase 2 — `shielded` finnes ikke ennå).
+    const map = this.scene.map;
+    for (const other of this.scene.ships) {
+      if (other === this || !other.alive) continue;
+      let dx = other.x - this.x, dy = other.y - this.y;
+      if (map.edgewrap) {
+        if (Math.abs(dx) > map.widthPx / 2)  dx -= Math.sign(dx) * map.widthPx;
+        if (Math.abs(dy) > map.heightPx / 2) dy -= Math.sign(dy) * map.heightPx;
+      }
+      const d = Math.hypot(dx, dy);
+      if (d > 0 && d < PHYSICS.blastRadius) {
+        const imp = PHYSICS.blastForce * (1 - d / PHYSICS.blastRadius) * (other.shielded ? 2 : 1);
+        other.vx += (dx / d) * imp;
+        other.vy += (dy / d) * imp;
+      }
+    }
   }
 }
 

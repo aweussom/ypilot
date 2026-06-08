@@ -5,3 +5,6 @@ vendor/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Skjermbilder / debug-bilder (droppes ikke i repo)
+*Skjermbilde*.png
