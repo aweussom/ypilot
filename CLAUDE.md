@@ -86,8 +86,9 @@ og det er med vilje — det er her spill-følelsen finjusteres:
 
 - Bevegelses-integrasjon (thrust/rotasjon/gravitasjon/wrap) er **håndskrevet.**
   Arcade Physics' drag/friksjon-modell motarbeider XPilots friksjonsløse
-  vakuum-følelse, så hastighet integreres direkte. Ingen friksjon i vakuum;
-  `maxSpeed` er et mykt tak.
+  vakuum-følelse, så hastighet integreres direkte. En **lett, justerbar drag**
+  (`PHYSICS.drag`) gir terminal-fart så fall ikke akselererer i det uendelige
+  (sett `1` for rent vakuum); `maxSpeed` er et hardt sikkerhetstak.
 - **Vegg-kollisjon er manuell grid-basert** (rute-oppslag `tileAt`, liten ~8px
   skip-hitbox), *ikke* Matter.js og ikke sirkel-mot-vilkårlig-linje — kartet er et
   block-tile grid, og dette gir kontroll over refleksjon-med-skjold vs. instant

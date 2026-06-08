@@ -19,7 +19,8 @@
 const PHYSICS = {
   thrustForce:  0.18,   // akselerasjon per frame ved full gass
   turnRate:     0.065,  // rad per frame
-  maxSpeed:     12,     // px/frame — mykt tak (clamp i MVP)
+  maxSpeed:     12,     // px/frame — hardt sikkerhetstak (clamp)
+  drag:         0.99,   // hastighet beholdt per frame (<1 = litt drag → terminal-fart; 1 = rent vakuum)
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
   fireCooldown: 13,     // frames mellom skudd
@@ -543,7 +544,12 @@ class Ship {
     // dras rett i en vegg det første sekundet.
     if (this.invuln <= 0) this.vy += GRAVITY * dtScale;
 
-    // Mykt fartstak
+    // Litt drag → terminal-fart, så et fall ikke akselererer i det uendelige.
+    // PHYSICS.drag = 1 gir rent friksjonsløst vakuum.
+    const dragF = 1 - (1 - PHYSICS.drag) * dtScale;
+    this.vx *= dragF; this.vy *= dragF;
+
+    // Hardt sikkerhetstak
     const sp = Math.hypot(this.vx, this.vy);
     if (sp > PHYSICS.maxSpeed) {
       const f = PHYSICS.maxSpeed / sp;
