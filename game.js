@@ -29,7 +29,7 @@ const PHYSICS = {
   // — Skip / liv / respawn —
   shipRadius:   8,      // px — skip-hitbox
   respawnDelay: 180,    // frames (~3s)
-  spawnInvuln:  36,     // frames (~0.6s) usårbar etter respawn
+  spawnInvuln:  90,     // frames (~1.5s) free shield etter spawn/takeover (anti spawn-camp)
   startLives:   3,      // liv før game over
   // — Eksplosjon / blast-push —
   explodeCount: 28,     // partikler i eksplosjonen
@@ -58,6 +58,12 @@ const AI = {
   sensorAngle:  0.6,    // rad — venstre/høyre-føler
   avoidTurn:    0.8,    // rad — vri bort fra vegg
   keepDistance: 3,      // blokker — hold avstand til mål
+};
+
+// Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
+const GAME = {
+  shipCount: 6,   // totalt antall skip på banen
+  humans:    2,   // menneske-styrte når AI-toggle er AV (resten bots); toggle PÅ = 1
 };
 
 const COLORS = {
@@ -148,10 +154,12 @@ function buildTestMap() {
     for (let y = r; y < r + h; y++)
       for (let x = c; x < c + w; x++) tiles[y][x] = 'x';
 
-  // Spawn-punkter i åpne hjørner.
+  // Spawn-punkter (hjørner + midt-sider) — nok til mange skip.
+  const mid = Math.floor(rows / 2);
   const spawnCells = [
     { col: 3, row: 3 }, { col: cols - 4, row: 3 },
     { col: 3, row: rows - 4 }, { col: cols - 4, row: rows - 4 },
+    { col: 3, row: mid }, { col: cols - 4, row: mid },
   ];
   for (const s of spawnCells) tiles[s.row][s.col] = '_';
 
@@ -465,19 +473,27 @@ function lineClear(map, sx, sy, dx, dy, dist) {
 // Heuristisk AI (Increment 2): styr mot motstander, unngå vegger, skyt med fri sikt.
 // Samme {thrust,left,right,fire,shield}-grensesnitt som tastatur (inputProvider-søm).
 // Increment 3 (Gemini Nano-enriching) gir smartere posisjonering oppå dette.
-function makeAIProvider(self, target, map) {
+function makeAIProvider(self, scene) {
   return () => {
     const cmd = { thrust: false, left: false, right: false, fire: false, shield: false };
-    if (!self.alive || !target.alive) return cmd;
-
-    // Retning til mål — korteste vei med wrap.
-    let dx = target.x - self.x, dy = target.y - self.y;
+    if (!self.alive) return cmd;
+    const map = scene.map;
     const W = map.widthPx, H = map.heightPx;
-    if (map.edgewrap) {
-      if (Math.abs(dx) > W / 2) dx -= Math.sign(dx) * W;
-      if (Math.abs(dy) > H / 2) dy -= Math.sign(dy) * H;
+
+    // Nærmeste levende motstander (free-for-all) — korteste vei med wrap.
+    let target = null, dx = 0, dy = 0, best = Infinity;
+    for (const o of scene.ships) {
+      if (o === self || !o.alive || o.eliminated) continue;
+      let ox = o.x - self.x, oy = o.y - self.y;
+      if (map.edgewrap) {
+        if (Math.abs(ox) > W / 2) ox -= Math.sign(ox) * W;
+        if (Math.abs(oy) > H / 2) oy -= Math.sign(oy) * H;
+      }
+      const d = Math.hypot(ox, oy);
+      if (d < best) { best = d; target = o; dx = ox; dy = oy; }
     }
-    const dist = Math.hypot(dx, dy);
+    if (!target) return cmd;
+    const dist = best;
     const bearing = Math.atan2(dy, dx);
 
     // Vegg-føler N blokker fram langs nesen.
@@ -524,6 +540,9 @@ class Ship {
     this.deaths = 0;
     this.fuel = PHYSICS.fuelMax;
     this.lives = PHYSICS.startLives;
+    this.isBot = !!opts.isBot;
+    this.label = opts.label || 'P?';
+    this.eliminated = false;
 
     this.vx = 0; this.vy = 0;
     this.angle = this.spawn.angle;
@@ -584,6 +603,7 @@ class Ship {
   }
 
   update(dtScale) {
+    if (this.eliminated) return;   // ute av banen — ingen respawn
     if (!this.alive) {
       this.respawnTimer -= dtScale;
       // Nedtelling som viser hvor skipet kommer tilbake.
@@ -731,13 +751,14 @@ class Ship {
       }
     }
 
-    // Liv: respawn hvis liv igjen, ellers game over.
+    // Liv: respawn hvis liv igjen, ellers eliminert (ute av banen).
     if (this.lives > 0) {
       this.respawnTimer = PHYSICS.respawnDelay;
       this.marker.setVisible(true);
       this.countText.setVisible(true);
     } else {
-      this.scene.gameOver(this);
+      this.eliminated = true;
+      this.scene.onEliminated(this);
     }
   }
 }
@@ -785,31 +806,47 @@ class GameScene extends Phaser.Scene {
     kb.addCapture('SPACE,UP,DOWN,LEFT,RIGHT');
     const keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,ENTER');
 
-    // To skip — lokal multiplayer på samme tastatur. Spawns loopes over kartets baser.
+    // Free-for-all: GAME.shipCount skip. Første `humanCount` er menneske-styrt
+    // (tastatur), resten bots. AI-toggle PÅ = bare P1 (mot bots).
     // P1: W gass / A,D rotér / S skjold (Fase 2) / SPACE fyr.
     // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
-    const players = [
-      { color: COLORS.p1, keys: { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S } },
-      { color: COLORS.p2, keys: { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN } },
-    ];
-    // Velg spawns lengst fra hverandre (unngår at skip spawner oppå hverandre).
-    const spawns = pickSpawns(this.map.spawns, players.length);
-    this.ships = players.map((p, i) => new Ship(this, {
-      color: p.color, keys: p.keys, spawn: spawns[i % spawns.length],
-    }));
-    this.ship1 = this.ships[0];
-    this.ship2 = this.ships[1];
-
-    // AI-motstander på P2 (default på). Overstyrer input-sømpunktet med AI-provider.
     let aiOn = true;
     try { aiOn = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
-    if (aiOn) this.ship2.input = makeAIProvider(this.ship2, this.ship1, this.map);
+    const humanCount = aiOn ? 1 : GAME.humans;
 
-    // Kollisjoner — Phaser Arcade for entitet-mot-entitet (vegger er grid-basert).
-    this.physics.add.overlap(this.ship1.sprite, this.ship2.sprite, () => {
-      this.ship1.die();
-      this.ship2.die();
-    });
+    const humanKeyDefs = [
+      { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S },
+      { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN },
+    ];
+    const palette = [COLORS.p1, COLORS.p2, 0xffcc33, 0x66ff66, 0xff6688, 0xaa88ff, 0xffffff, 0xff8844];
+
+    const spawns = this.map.spawns;
+    this.humanKeys = [];   // tastatur-providere (for takeover)
+    this.humanCount = humanCount;
+    this.ships = [];
+    for (let i = 0; i < GAME.shipCount; i++) {
+      const human = i < humanCount;
+      const ship = new Ship(this, {
+        color: palette[i % palette.length],
+        spawn: spawns[i % spawns.length],
+        isBot: !human,
+        label: human ? 'P' + (i + 1) : 'Bot ' + (i - humanCount + 1),
+        keys: human ? humanKeyDefs[i] : null,
+      });
+      if (human) this.humanKeys[i] = keyboardInput(humanKeyDefs[i]);
+      else ship.input = makeAIProvider(ship, this);
+      this.ships.push(ship);
+    }
+    // Skipet hvert menneske styrer akkurat nå (endres ved takeover).
+    this.humanShips = this.ships.slice(0, humanCount);
+
+    // Kollisjoner. Skip-mot-skip: alle par (begge dør). Bullet-mot-skip: per skip.
+    for (let i = 0; i < this.ships.length; i++)
+      for (let j = i + 1; j < this.ships.length; j++)
+        this.physics.add.overlap(this.ships[i].sprite, this.ships[j].sprite, (a, b) => {
+          const sa = a.getData('ship'), sb = b.getData('ship');
+          if (sa && sb) { sa.die(); sb.die(); }
+        });
     for (const ship of this.ships) {
       this.physics.add.overlap(this.bulletGroup, ship.sprite, (a, b) => this.onBulletHit(a, b));
     }
@@ -821,19 +858,49 @@ class GameScene extends Phaser.Scene {
     this.fuelP2 = document.getElementById('fuel-p2');
     this.livesP1 = document.getElementById('lives-p1');
     this.livesP2 = document.getElementById('lives-p2');
+    this.remainingEl = document.getElementById('remaining');
     this.over = false;
 
     // R for ny runde etter game over.
     this.input.keyboard.on('keydown-R', () => { if (this.over) location.reload(); });
   }
 
-  gameOver(loser) {
+  onEliminated(ship) {
+    ship.marker.setVisible(false);
+    ship.countText.setVisible(false);
+
+    // Var et menneske eliminert? Ta over boten som gjør det DÅRLIGST (færrest kills,
+    // så færrest liv) — Counter-Strike-stil, ingen poeng. Free shield ved overtakelse.
+    const hi = this.humanShips.indexOf(ship);
+    if (hi !== -1) {
+      const bots = this.ships.filter(s => s.isBot && !s.eliminated);
+      bots.sort((a, b) => (a.kills - b.kills) || (a.lives - b.lives));
+      const bot = bots[0];
+      if (bot) {
+        bot.isBot = false;
+        bot.input = this.humanKeys[hi];
+        bot.label = ship.label;
+        bot.invuln = PHYSICS.spawnInvuln;     // free shield mens man «hopper inn»
+        this.humanShips[hi] = bot;
+      } else {
+        this.humanShips[hi] = null;           // ingen bot å overta → ute
+      }
+    }
+    this.checkWin();
+  }
+
+  checkWin() {
+    if (this.over) return;
+    const left = this.ships.filter(s => !s.eliminated);
+    if (left.length <= 1) this.gameOver(left[0] || null);
+  }
+
+  gameOver(winner) {
     if (this.over) return;
     this.over = true;
-    const winner = (loser === this.ship1) ? 'P2' : 'P1';
     const txt = document.getElementById('gameover-text');
     const el = document.getElementById('gameover');
-    if (txt) txt.textContent = winner + ' vant!';
+    if (txt) txt.textContent = winner ? (winner.label + ' vant!') : 'Uavgjort!';
     if (el) el.style.display = 'flex';
   }
 
@@ -863,12 +930,24 @@ class GameScene extends Phaser.Scene {
       if (b.dead) this.bullets.splice(i, 1);
     }
 
-    this.hudP1.textContent = 'P1  ' + this.ship1.kills;
-    this.hudP2.textContent = 'P2  ' + this.ship2.kills;
-    this.fuelP1.style.width = Math.max(0, this.ship1.fuel) + '%';
-    this.fuelP2.style.width = Math.max(0, this.ship2.fuel) + '%';
-    this.livesP1.textContent = '♥'.repeat(Math.max(0, this.ship1.lives));
-    this.livesP2.textContent = '♥'.repeat(Math.max(0, this.ship2.lives));
+    // HUD bundet til hvert menneskes NÅVÆRENDE skip (endres ved takeover).
+    for (let i = 0; i < 2; i++) {
+      const score = i === 0 ? this.hudP1 : this.hudP2;
+      const fuel  = i === 0 ? this.fuelP1 : this.fuelP2;
+      const lives = i === 0 ? this.livesP1 : this.livesP2;
+      if (i >= this.humanCount) { score.textContent = ''; fuel.style.width = '0%'; lives.textContent = ''; continue; }
+      const s = this.humanShips[i];
+      if (s && !s.eliminated) {
+        score.textContent = 'P' + (i + 1) + '  ' + s.kills;
+        fuel.style.width = Math.max(0, s.fuel) + '%';
+        lives.textContent = '♥'.repeat(Math.max(0, s.lives));
+      } else {
+        score.textContent = 'P' + (i + 1) + '  ute';
+        fuel.style.width = '0%';
+        lives.textContent = '';
+      }
+    }
+    if (this.remainingEl) this.remainingEl.textContent = 'Skip igjen: ' + this.ships.filter(s => !s.eliminated).length;
   }
 }
 

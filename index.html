@@ -61,6 +61,8 @@
     }
     #hud .fuelbar span { display: block; height: 100%; width: 100%; background: currentColor; }
     #hud .lives { font-size: 15px; letter-spacing: 3px; }
+    #hud .hint { display: flex; flex-direction: column; }
+    #hud #remaining { color: #cfe3ff; opacity: 0.8; margin-top: 4px; }
     /* Game-over-overlay */
     #gameover {
       position: absolute; inset: 0; display: none;
@@ -114,7 +116,10 @@
       <div class="fuelbar"><span id="fuel-p1"></span></div>
       <div class="lives" id="lives-p1">&#9829;&#9829;&#9829;</div>
     </div>
-    <div class="hint">P1: W A D · SPACE &nbsp;&nbsp; P2: &larr; &uarr; &rarr; · ENTER</div>
+    <div class="hint">
+      <div>P1: W A D · SPACE &nbsp;&nbsp; P2: &larr; &uarr; &rarr; · ENTER</div>
+      <div id="remaining"></div>
+    </div>
     <div class="player p2">
       <div id="score-p2">P2  0</div>
       <div class="fuelbar"><span id="fuel-p2"></span></div>
