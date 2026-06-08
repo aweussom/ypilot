@@ -28,6 +28,11 @@ const PHYSICS = {
   spawnInvuln:  36,     // frames (~0.6s) usårbar etter respawn
   blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker)
   blastForce:   6,      // px/frame impuls ved episenter
+  fuelMax:      100,    // full tank
+  fuelThrust:   0.18,   // drivstoff/frame ved gass
+  fuelShot:     2,      // drivstoff per skudd
+  fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
+  startLives:   3,      // liv før game over
 };
 
 const COLORS = {
@@ -43,12 +48,18 @@ const BLOCK = 32;  // piksler per kartrute (verdens-enhet — alltid 32, uansett
 // koordinater bruker alltid BLOCK=32 så fysikk/skip-følelse er identisk på alle kart.
 function viewW() { return window.innerWidth; }
 function viewH() { return window.innerHeight; }
-// Kart som ville gjort skipet mindre enn dette på skjermen er «kun nettverk»
-// (utelatt fra lokal kart-velger). Se memory lokal-vs-nettverk-kart.
-const MIN_SHIP_PX = 9;
+// Kart større enn dette (i ruter) blir for små for lokal spilling: skipet er fast
+// 32 verdens-px, så større kart = bittesmå skip. Slike utelates fra lokal kart-velger
+// («kun nettverk»). Skjerm-uavhengig (skipets skjerm-andel ≈ FIT/maxdim). Justerbar.
+const MAX_LOCAL_DIM = 80;
 // Kameraet fyller IKKE skjermen kant-i-kant — la ~20% luft rundt kartet, så man kan
 // manøvrere rundt hindringer ved kanten og se wrap. Justerbar.
 const FIT = 0.8;
+// Drivstoff: én ressurs som driver gass/skyting (skjold senere). Fylles ved å hovre
+// sakte nær en fuel-stasjon (#). Tom tank = kan ikke gjøre noe → driver i veggen.
+const REFUEL_RANGE = BLOCK * 2;   // hvor nær stasjonen man må være
+const REFUEL_SPEED = 3;           // px/frame — må være saktere (hovre)
+const FUEL_COLOR = 0x33ff99;      // neon-grønn fuel-stasjon
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
@@ -113,6 +124,10 @@ function buildTestMap() {
   ];
   for (const s of spawnCells) tiles[s.row][s.col] = '_';
 
+  // Et par fuel-stasjoner for å teste fylling.
+  const fuelCells = [{ col: 15, row: 3 }, { col: 15, row: 14 }];
+  for (const f of fuelCells) tiles[f.row][f.col] = '#';
+
   // Center-of-gravity er NED som standard; skip spawner med snuten OPP (vekk fra CoG).
   return {
     cols, rows, blockSize: BLOCK,
@@ -121,6 +136,7 @@ function buildTestMap() {
     spawns: spawnCells.map(s => ({
       x: (s.col + 0.5) * BLOCK, y: (s.row + 0.5) * BLOCK, angle: -Math.PI / 2,
     })),
+    fuelStations: fuelCells.map(f => ({ x: (f.col + 0.5) * BLOCK, y: (f.row + 0.5) * BLOCK })),
   };
 }
 
@@ -178,11 +194,14 @@ function parseMap(text, fallbackName) {
         : -Math.PI / 2;   // CoG ned → snute opp
 
   const spawns = [];
+  const fuelStations = [];
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
     const ch = tiles[r][c];
     if (ch === '_' || (ch >= '0' && ch <= '9')) {
       const x = (c + 0.5) * BLOCK, y = (r + 0.5) * BLOCK;
       spawns.push({ x, y, angle: spawnAngle(x, y) });
+    } else if (ch === '#') {
+      fuelStations.push({ x: (c + 0.5) * BLOCK, y: (r + 0.5) * BLOCK });
     }
   }
   if (spawns.length === 0) {            // fallback: kvart-punkter
@@ -203,15 +222,14 @@ function parseMap(text, fallbackName) {
   return {
     cols: C, rows: R, blockSize: BLOCK,
     widthPx: C * BLOCK, heightPx: R * BLOCK,
-    tiles, edgewrap: wrap, gravity, cog,
+    tiles, edgewrap: wrap, gravity, cog, fuelStations,
     spawns, name: header.mapname || fallbackName || 'kart', header,
   };
 }
 
-// Lokalt spillbart hvis skipet ikke blir for lite på skjermen når hele kartet vises.
+// Lokalt spillbart hvis kartet ikke er for stort (større kart → for små skip).
 function isLocallyPlayable(wTiles, hTiles) {
-  const zoom = FIT * Math.min(viewW() / (wTiles * BLOCK), viewH() / (hTiles * BLOCK));
-  return BLOCK * zoom >= MIN_SHIP_PX;
+  return Math.max(wTiles, hTiles) <= MAX_LOCAL_DIM;
 }
 
 // Laster valgt kart (filnavn relativt til maps/), eller testbanen.
@@ -312,6 +330,20 @@ function renderMap(scene, map) {
   }
   g.setBlendMode(Phaser.BlendModes.ADD);
   g.setDepth(0);
+
+  // Fuel-stasjoner — neon-markør (sirkel + kryss).
+  if (map.fuelStations && map.fuelStations.length) {
+    const fg = scene.add.graphics();
+    fg.lineStyle(2, FUEL_COLOR, 0.9);
+    const rad = map.blockSize * 0.42;
+    for (const f of map.fuelStations) {
+      fg.strokeCircle(f.x, f.y, rad);
+      fg.lineBetween(f.x - rad * 0.5, f.y, f.x + rad * 0.5, f.y);
+      fg.lineBetween(f.x, f.y - rad * 0.5, f.x, f.y + rad * 0.5);
+    }
+    fg.setBlendMode(Phaser.BlendModes.ADD);
+    fg.setDepth(0);
+  }
 }
 
 /* ----------------------------------------------------------------------------
@@ -450,6 +482,8 @@ class Ship {
     this.spawn = opts.spawn;
     this.kills = 0;
     this.deaths = 0;
+    this.fuel = PHYSICS.fuelMax;
+    this.lives = PHYSICS.startLives;
 
     this.vx = 0; this.vy = 0;
     this.angle = this.spawn.angle;
@@ -504,6 +538,7 @@ class Ship {
     this.vx = 0; this.vy = 0;
     this.alive = true;
     this.invuln = PHYSICS.spawnInvuln;
+    this.fuel = PHYSICS.fuelMax;
     this.marker.setVisible(false);
     this.countText.setVisible(false);
   }
@@ -533,11 +568,12 @@ class Ship {
     if (input.left)  this.angle -= PHYSICS.turnRate * dtScale;
     if (input.right) this.angle += PHYSICS.turnRate * dtScale;
 
-    // Gass — newtonsk akselerasjon langs nesen, ingen friksjon.
-    const thrusting = input.thrust;
+    // Gass — newtonsk akselerasjon langs nesen. Krever drivstoff.
+    const thrusting = input.thrust && this.fuel > 0;
     if (thrusting) {
       this.vx += Math.cos(this.angle) * PHYSICS.thrustForce * dtScale;
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
+      this.fuel -= PHYSICS.fuelThrust * dtScale;
     }
 
     // Global gravitasjon (nedover) — AV mens spawn-usårbarheten varer, så man ikke
@@ -579,14 +615,29 @@ class Ship {
       this.thrust.emitting = false;
     }
 
-    // Skyting
+    // Skyting — krever drivstoff.
     this.fireTimer -= dtScale;
-    if (input.fire && this.fireTimer <= 0) {
+    if (input.fire && this.fireTimer <= 0 && this.fuel >= PHYSICS.fuelShot) {
       this.fire();
+      this.fuel -= PHYSICS.fuelShot;
       this.fireTimer = PHYSICS.fireCooldown;
     }
 
-    // Vegg-død (Fase 1: ingen skjold ennå → instant død)
+    // Fylling — hovre sakte nær en fuel-stasjon.
+    if (this.fuel < PHYSICS.fuelMax) {
+      const map = this.scene.map;
+      if (Math.hypot(this.vx, this.vy) < REFUEL_SPEED && map.fuelStations) {
+        for (const f of map.fuelStations) {
+          if (Math.hypot(f.x - this.x, f.y - this.y) < REFUEL_RANGE) {
+            this.fuel = Math.min(PHYSICS.fuelMax, this.fuel + PHYSICS.fuelRefill * dtScale);
+            break;
+          }
+        }
+      }
+    }
+    if (this.fuel < 0) this.fuel = 0;
+
+    // Vegg-død (ingen skjold ennå → instant død)
     if (tileAt(this.scene.map, this.x, this.y) === 'x') {
       this.die();
     }
@@ -604,13 +655,11 @@ class Ship {
     if (!this.alive || this.invuln > 0) return;
     this.alive = false;
     this.deaths++;
+    this.lives -= 1;
     this.thrust.emitting = false;
     this.sprite.setVisible(false);
     this.sprite.body.enable = false;
-    this.respawnTimer = PHYSICS.respawnDelay;
     this.scene.explosion.explode(28, this.x, this.y);
-    this.marker.setVisible(true);
-    this.countText.setVisible(true);
 
     // Blast-push: eksplosjonen dytter nærliggende levende skip radielt vekk (avtar med
     // avstand). MER dytt om motstander har skjold på (Fase 2 — `shielded` finnes ikke ennå).
@@ -628,6 +677,15 @@ class Ship {
         other.vx += (dx / d) * imp;
         other.vy += (dy / d) * imp;
       }
+    }
+
+    // Liv: respawn hvis liv igjen, ellers game over.
+    if (this.lives > 0) {
+      this.respawnTimer = PHYSICS.respawnDelay;
+      this.marker.setVisible(true);
+      this.countText.setVisible(true);
+    } else {
+      this.scene.gameOver(this);
     }
   }
 }
@@ -707,6 +765,24 @@ class GameScene extends Phaser.Scene {
     // HUD-referanser (DOM)
     this.hudP1 = document.getElementById('score-p1');
     this.hudP2 = document.getElementById('score-p2');
+    this.fuelP1 = document.getElementById('fuel-p1');
+    this.fuelP2 = document.getElementById('fuel-p2');
+    this.livesP1 = document.getElementById('lives-p1');
+    this.livesP2 = document.getElementById('lives-p2');
+    this.over = false;
+
+    // R for ny runde etter game over.
+    this.input.keyboard.on('keydown-R', () => { if (this.over) location.reload(); });
+  }
+
+  gameOver(loser) {
+    if (this.over) return;
+    this.over = true;
+    const winner = (loser === this.ship1) ? 'P2' : 'P1';
+    const txt = document.getElementById('gameover-text');
+    const el = document.getElementById('gameover');
+    if (txt) txt.textContent = winner + ' vant!';
+    if (el) el.style.display = 'flex';
   }
 
   onBulletHit(objA, objB) {
@@ -724,6 +800,7 @@ class GameScene extends Phaser.Scene {
   }
 
   update(time, delta) {
+    if (this.over) return;
     const dtScale = Math.min(delta / (1000 / 60), 2);  // clamp ved hakking
 
     for (const ship of this.ships) ship.update(dtScale);
@@ -736,6 +813,10 @@ class GameScene extends Phaser.Scene {
 
     this.hudP1.textContent = 'P1  ' + this.ship1.kills;
     this.hudP2.textContent = 'P2  ' + this.ship2.kills;
+    this.fuelP1.style.width = Math.max(0, this.ship1.fuel) + '%';
+    this.fuelP2.style.width = Math.max(0, this.ship2.fuel) + '%';
+    this.livesP1.textContent = '♥'.repeat(Math.max(0, this.ship1.lives));
+    this.livesP2.textContent = '♥'.repeat(Math.max(0, this.ship2.lives));
   }
 }
 
@@ -749,6 +830,11 @@ async function boot() {
   let sel = 'test';
   try { sel = localStorage.getItem(MAP_KEY) || 'test'; } catch (e) { /* privat modus */ }
   MAP = await loadMap(sel);
+  // Falt et lagret kart utenfor lokal-filteret (for stort) eller mangler? Bruk testbanen.
+  if (sel !== 'test' && !isLocallyPlayable(MAP.cols, MAP.rows)) {
+    MAP = buildTestMap(); sel = 'test';
+    try { localStorage.setItem(MAP_KEY, 'test'); } catch (e) { /* privat modus */ }
+  }
 
   setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
   setupMapSelector(sel);

@@ -52,6 +52,26 @@
       font-size: 12px;
       align-self: center;
     }
+    #hud .player { display: flex; flex-direction: column; gap: 4px; }
+    #hud .p2 { align-items: flex-end; }
+    #hud .fuelbar {
+      width: 130px; height: 7px;
+      border: 1px solid currentColor; border-radius: 3px; overflow: hidden;
+      box-shadow: 0 0 6px currentColor;
+    }
+    #hud .fuelbar span { display: block; height: 100%; width: 100%; background: currentColor; }
+    #hud .lives { font-size: 15px; letter-spacing: 3px; }
+    /* Game-over-overlay */
+    #gameover {
+      position: absolute; inset: 0; display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; pointer-events: none; user-select: none;
+    }
+    #gameover #gameover-text {
+      font-size: 64px; font-weight: bold; letter-spacing: 4px;
+      color: #fff; text-shadow: 0 0 20px #4488ff, 0 0 40px #4488ff;
+    }
+    #gameover .sub { font-size: 16px; color: #4488ff; letter-spacing: 2px; }
     /* Innstillinger — egen DOM-rad nederst (pointer-events på, i motsetning til #hud) */
     #settings {
       position: absolute;
@@ -89,9 +109,21 @@
 <body>
   <div id="game"></div>
   <div id="hud">
-    <div class="p1" id="score-p1">P1  0</div>
+    <div class="player p1">
+      <div id="score-p1">P1  0</div>
+      <div class="fuelbar"><span id="fuel-p1"></span></div>
+      <div class="lives" id="lives-p1">&#9829;&#9829;&#9829;</div>
+    </div>
     <div class="hint">P1: W A D · SPACE &nbsp;&nbsp; P2: &larr; &uarr; &rarr; · ENTER</div>
-    <div class="p2" id="score-p2">P2  0</div>
+    <div class="player p2">
+      <div id="score-p2">P2  0</div>
+      <div class="fuelbar"><span id="fuel-p2"></span></div>
+      <div class="lives" id="lives-p2">&#9829;&#9829;&#9829;</div>
+    </div>
+  </div>
+  <div id="gameover">
+    <div id="gameover-text"></div>
+    <div class="sub">Trykk R for ny runde</div>
   </div>
   <div id="settings">
     <label for="map-select">Kart</label>
