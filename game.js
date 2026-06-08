@@ -9,30 +9,55 @@
 
 'use strict';
 
-/* ----------------------------------------------------------------------------
- * Konstanter
- * Verdiene er XPilot-referanse, uttrykt per frame @60fps. Integrasjonen
- * skalerer med dtScale = delta / (1000/60) så det blir frame-rate-uavhengig.
- * Dette (manuell integrasjon + manuell vegg-kollisjon) er de to bevisste
- * justeringsknappene; alt annet lener seg på Phaser. Se CLAUDE.md.
- * ------------------------------------------------------------------------- */
+/* ═══════════════════════════════════════════════════════════════════════════
+ * TUNING — alle justerbare verdier samlet her (også de uten GUI). Endre fritt.
+ * Fysikk-verdier er per frame @60fps; integrasjonen skalerer med
+ * dtScale = delta/(1000/60) → frame-rate-uavhengig. Se CLAUDE.md.
+ * ═══════════════════════════════════════════════════════════════════════════ */
 const PHYSICS = {
+  // — Bevegelse —
   thrustForce:  0.18,   // akselerasjon per frame ved full gass
   turnRate:     0.065,  // rad per frame
   maxSpeed:     12,     // px/frame — hardt sikkerhetstak (clamp)
-  drag:         0.99,   // hastighet beholdt per frame (<1 = litt drag → terminal-fart; 1 = rent vakuum)
+  drag:         0.99,   // hastighet beholdt per frame (<1 = drag → terminal-fart; 1 = vakuum)
+  // — Skyting —
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
   fireCooldown: 13,     // frames mellom skudd
+  noseOffset:   14,     // px — der kula/eksosen starter foran/bak senteret
+  bulletRadius: 4,      // px — bullet-hitbox
+  // — Skip / liv / respawn —
+  shipRadius:   8,      // px — skip-hitbox
   respawnDelay: 180,    // frames (~3s)
   spawnInvuln:  36,     // frames (~0.6s) usårbar etter respawn
+  startLives:   3,      // liv før game over
+  // — Eksplosjon / blast-push —
+  explodeCount: 28,     // partikler i eksplosjonen
   blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker)
   blastForce:   6,      // px/frame impuls ved episenter
+  // — Jeteksos —
+  exhaustSpeed:  90,    // partikkel-fart bakover
+  exhaustSpread: 40,    // sideveis spredning
+  exhaustOffset: 12,    // px bak senteret
+  // — Drivstoff —
   fuelMax:      100,    // full tank
   fuelThrust:   0.18,   // drivstoff/frame ved gass
   fuelShot:     2,      // drivstoff per skudd
   fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
-  startLives:   3,      // liv før game over
+  // — Landing —
+  groundFriction: 0.85, // vx beholdt per frame ved bakke-kontakt
+};
+
+// AI-oppførsel (heuristisk). Vinkler i rad; fireRange/lookahead/keepDistance i blokker.
+const AI = {
+  turnDeadzone: 0.06,   // ikke rotér innenfor dette
+  aimedCone:    0.4,    // «omtrent siktet» → gass
+  fireCone:     0.12,   // «godt siktet» → skyt
+  fireRange:    30,     // blokker — maks skyte-avstand
+  lookahead:    2,      // blokker — vegg-føler fram
+  sensorAngle:  0.6,    // rad — venstre/høyre-føler
+  avoidTurn:    0.8,    // rad — vri bort fra vegg
+  keepDistance: 3,      // blokker — hold avstand til mål
 };
 
 const COLORS = {
@@ -51,7 +76,7 @@ function viewH() { return window.innerHeight; }
 // Kart større enn dette (i ruter) blir for små for lokal spilling: skipet er fast
 // 32 verdens-px, så større kart = bittesmå skip. Slike utelates fra lokal kart-velger
 // («kun nettverk»). Skjerm-uavhengig (skipets skjerm-andel ≈ FIT/maxdim). Justerbar.
-const MAX_LOCAL_DIM = 80;
+const MAX_LOCAL_DIM = 60;
 // Kameraet fyller IKKE skjermen kant-i-kant — la ~20% luft rundt kartet, så man kan
 // manøvrere rundt hindringer ved kanten og se wrap. Justerbar.
 const FIT = 0.8;
@@ -60,6 +85,12 @@ const FIT = 0.8;
 const REFUEL_RANGE = BLOCK * 2;   // hvor nær stasjonen man må være
 const REFUEL_SPEED = 3;           // px/frame — må være saktere (hovre)
 const FUEL_COLOR = 0x33ff99;      // neon-grønn fuel-stasjon
+
+// Landing (Lunar Lander / Turboraketti): myk + nesten oppreist nedstigning på en flat
+// vegg-topp → hvile. Foreløpig enkel regel; for fort eller for skjevt = krasj.
+const LAND_SPEED = 3;             // px/frame — må være saktere for å lande
+const LAND_ANGLE_TOL = 0.25;      // rad (~14°) — bittelitt skjevt går, ikke mye
+const LAND_MARGIN = 12;           // px senteret hviler over vegg-toppen
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
@@ -268,6 +299,14 @@ function wrapObject(map, obj) {
   if (obj.y < 0) obj.y += map.heightPx; else if (obj.y >= map.heightPx) obj.y -= map.heightPx;
 }
 
+// Er nesen (nesten) opp? Brukes for landing — toleranse fra rett opp (-PI/2).
+function uprightOK(angle) {
+  let d = angle + Math.PI / 2;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return Math.abs(d) < LAND_ANGLE_TOL;
+}
+
 /* ----------------------------------------------------------------------------
  * Teksturer — genereres én gang fra Graphics (neon-wireframe, ingen assets).
  * Skipet tegnes hvitt og tintes per spiller.
@@ -360,7 +399,7 @@ class Bullet {
     s.setBlendMode(Phaser.BlendModes.ADD);
     s.setTint(owner.color);
     s.setDepth(4);
-    s.body.setCircle(4, 4, 4);
+    s.body.setCircle(PHYSICS.bulletRadius, PHYSICS.bulletRadius, PHYSICS.bulletRadius);
     s.body.setAllowGravity(false);
     // Arcade flytter bullet'en (px/sek). Konstant fart → ingen manuell integrasjon.
     s.body.setVelocity(vxFrame * 60, vyFrame * 60);
@@ -370,6 +409,7 @@ class Bullet {
   }
 
   update(dtScale) {
+    if (this.dead || !this.sprite) return;   // kan ha blitt destruert via overlap samme frame
     this.life -= dtScale;
     wrapObject(this.scene.map, this.sprite);
     // Bullet stoppes av vegg.
@@ -440,30 +480,30 @@ function makeAIProvider(self, target, map) {
     const dist = Math.hypot(dx, dy);
     const bearing = Math.atan2(dy, dx);
 
-    // Vegg-føler ~2 blokker fram langs nesen.
-    const look = map.blockSize * 2;
+    // Vegg-føler N blokker fram langs nesen.
+    const look = map.blockSize * AI.lookahead;
     const wallAhead = tileAt(map, self.x + Math.cos(self.angle) * look, self.y + Math.sin(self.angle) * look) === 'x';
 
     // Ønsket retning: mot mål, men vri bort fra vegg om den er rett foran.
     let desired = bearing;
     if (wallAhead) {
-      const leftWall = tileAt(map, self.x + Math.cos(self.angle - 0.6) * look, self.y + Math.sin(self.angle - 0.6) * look) === 'x';
-      desired = self.angle + (leftWall ? 0.8 : -0.8);
+      const leftWall = tileAt(map, self.x + Math.cos(self.angle - AI.sensorAngle) * look, self.y + Math.sin(self.angle - AI.sensorAngle) * look) === 'x';
+      desired = self.angle + (leftWall ? AI.avoidTurn : -AI.avoidTurn);
     }
 
     // Roter korteste vei mot ønsket retning.
     let da = desired - self.angle;
     while (da > Math.PI) da -= 2 * Math.PI;
     while (da < -Math.PI) da += 2 * Math.PI;
-    if (da > 0.06) cmd.right = true;
-    else if (da < -0.06) cmd.left = true;
+    if (da > AI.turnDeadzone) cmd.right = true;
+    else if (da < -AI.turnDeadzone) cmd.left = true;
 
-    const aimed = Math.abs(da) < 0.4;
+    const aimed = Math.abs(da) < AI.aimedCone;
     // Gass når omtrent siktet, ikke vegg foran, og ikke for nær (hold litt avstand).
-    if (!wallAhead && aimed && dist > map.blockSize * 3) cmd.thrust = true;
+    if (!wallAhead && aimed && dist > map.blockSize * AI.keepDistance) cmd.thrust = true;
 
     // Skyt: godt siktet, innen rekkevidde, fri siktelinje.
-    if (aimed && Math.abs(da) < 0.12 && dist < map.blockSize * 30 && lineClear(map, self.x, self.y, dx, dy, dist)) {
+    if (aimed && Math.abs(da) < AI.fireCone && dist < map.blockSize * AI.fireRange && lineClear(map, self.x, self.y, dx, dy, dist)) {
       cmd.fire = true;
     }
     return cmd;
@@ -496,7 +536,7 @@ class Ship {
     s.setTint(this.color);
     s.setBlendMode(Phaser.BlendModes.ADD);
     s.setDepth(5);
-    s.body.setCircle(8, 8, 8);
+    s.body.setCircle(PHYSICS.shipRadius, PHYSICS.shipRadius, PHYSICS.shipRadius);
     s.body.setAllowGravity(false);
     s.setData('ship', this);
     this.sprite = s;
@@ -601,10 +641,10 @@ class Ship {
     // Jeteksos
     if (thrusting) {
       const dir = this.angle + Math.PI;                 // bakover
-      const ex = this.x + Math.cos(dir) * 12;
-      const ey = this.y + Math.sin(dir) * 12;
-      const spd = 90;
-      const j = (Math.random() - 0.5) * 40;             // litt spredning
+      const ex = this.x + Math.cos(dir) * PHYSICS.exhaustOffset;
+      const ey = this.y + Math.sin(dir) * PHYSICS.exhaustOffset;
+      const spd = PHYSICS.exhaustSpeed;
+      const j = (Math.random() - 0.5) * PHYSICS.exhaustSpread;   // litt spredning
       this.thrust.setPosition(ex, ey);
       this.thrust.setParticleSpeed(
         Math.cos(dir) * spd - Math.sin(dir) * j,
@@ -637,15 +677,27 @@ class Ship {
     }
     if (this.fuel < 0) this.fuel = 0;
 
-    // Vegg-død (ingen skjold ennå → instant død)
-    if (tileAt(this.scene.map, this.x, this.y) === 'x') {
+    // Vegg-død / landing. Senter i vegg = krasj. Ellers: myk + nesten oppreist
+    // nedstigning på en flat vegg-topp rett under → hvil (Lunar Lander-stil).
+    const wmap = this.scene.map;
+    if (tileAt(wmap, this.x, this.y) === 'x') {
       this.die();
+    } else if (this.vy >= 0) {
+      const topBelow = (Math.floor(this.y / wmap.blockSize) + 1) * wmap.blockSize;
+      if (tileAt(wmap, this.x, topBelow + 1) === 'x'
+          && this.y > topBelow - LAND_MARGIN
+          && Math.hypot(this.vx, this.vy) < LAND_SPEED
+          && uprightOK(this.angle)) {
+        this.sprite.y = topBelow - LAND_MARGIN;   // hvil på toppen
+        this.vy = 0;
+        this.vx *= PHYSICS.groundFriction;         // litt bakke-friksjon
+      }
     }
   }
 
   fire() {
-    const nx = this.x + Math.cos(this.angle) * 14;
-    const ny = this.y + Math.sin(this.angle) * 14;
+    const nx = this.x + Math.cos(this.angle) * PHYSICS.noseOffset;
+    const ny = this.y + Math.sin(this.angle) * PHYSICS.noseOffset;
     const bvx = this.vx + Math.cos(this.angle) * PHYSICS.bulletSpeed;
     const bvy = this.vy + Math.sin(this.angle) * PHYSICS.bulletSpeed;
     this.scene.bullets.push(new Bullet(this.scene, this, nx, ny, bvx, bvy));
@@ -659,7 +711,7 @@ class Ship {
     this.thrust.emitting = false;
     this.sprite.setVisible(false);
     this.sprite.body.enable = false;
-    this.scene.explosion.explode(28, this.x, this.y);
+    this.scene.explosion.explode(PHYSICS.explodeCount, this.x, this.y);
 
     // Blast-push: eksplosjonen dytter nærliggende levende skip radielt vekk (avtar med
     // avstand). MER dytt om motstander har skjold på (Fase 2 — `shielded` finnes ikke ennå).
