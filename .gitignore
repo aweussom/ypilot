@@ -1,0 +1,7 @@
+# Lokal Phaser-referanse (kildekode + docs + migrerings-skill) — kun for oppslag, ikke i repo
+vendor/
+
+# OS-skrot
+.DS_Store
+Thumbs.db
+desktop.ini

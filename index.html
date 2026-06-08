@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>jpilot</title>
+  <!-- Favicon: rakett-emoji 🚀 som inline base64-SVG (ingen ekstra fil) -->
+  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHRleHQgeD0iNTAlIiB5PSI1NCIgZm9udC1zaXplPSI1NCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+8J+agDwvdGV4dD48L3N2Zz4=">
+
+  <!-- Phaser 4 fra CDN — ingen bundler, dobbeltklikk og kjør -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@4.1.0/dist/phaser.min.js"></script>
+  <style>
+    /* Mørk bakgrunn — neon-estetikken lever av kontrast */
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #05060a;
+      overflow: hidden;
+      font-family: "Courier New", monospace;
+    }
+    #game {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* HUD ligger i DOM over canvas — ingen HUD-forurensning av spill-lerretet */
+    #hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 18px;
+      pointer-events: none;
+      user-select: none;
+      font-size: 18px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      text-shadow: 0 0 8px currentColor;
+    }
+    #hud .p1 { color: #00ffff; }   /* cyan  — spiller 1 */
+    #hud .p2 { color: #ff00ff; }   /* magenta — spiller 2 */
+    #hud .hint {
+      color: #4488ff;
+      opacity: 0.6;
+      font-weight: normal;
+      letter-spacing: 1px;
+      font-size: 12px;
+      align-self: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="hud">
+    <div class="p1" id="score-p1">P1  0</div>
+    <div class="hint">P1: W A D · SPACE &nbsp;&nbsp; P2: &larr; &uarr; &rarr; · ENTER</div>
+    <div class="p2" id="score-p2">P2  0</div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

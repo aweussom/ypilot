@@ -9,12 +9,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Prosjektstatus
 
-**Før-kode.** Repoet inneholder foreløpig kun designdokumentet
-`XPILOT-JAVASCRIPT-PLAN.md` og denne fila. Ingen av kildefilene under finnes
-ennå — de er den avtalte målstrukturen. Les `XPILOT-JAVASCRIPT-PLAN.md` først;
-det er den autoritative speccen for fysikk-konstanter, kart-format,
-entitets-former og den fasedelte byggerekkefølgen. Denne fila oppsummerer
-beslutningene som styrer *hvordan* kode skal skrives.
+**Fase 1 (MVP) implementert.** `index.html` + `game.js` gir to skip, newtonsk
+fysikk, wrap, skyting, kollisjoner, jeteksos og score. Skjold/energi/fuel/
+gravitasjon/lyd/`.map`-lasting er Fase 2 (se `XPILOT-JAVASCRIPT-PLAN.md`, som er
+den autoritative speccen for fysikk-konstanter, kart-format, entitets-former og
+byggerekkefølgen). Denne fila oppsummerer beslutningene som styrer *hvordan* kode
+skal skrives.
 
 **jpilot** er XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
 (Lunar Lander-slekt) med neon-wireframe-estetikk og lokal multiplayer på samme
@@ -25,11 +25,11 @@ finske programmereren bak Turboraketti — derav norsk som gjennomgående språk
 
 ## Bygg, kjør, test
 
-Det finnes **ingen byggesteg og ingen avhengigheter å installere.** Phaser 3
+Det finnes **ingen byggesteg og ingen avhengigheter å installere.** Phaser 4
 lastes fra et CDN via en `<script>`-tag i `index.html`:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/phaser@4.1.0/dist/phaser.min.js"></script>
 ```
 
 - **Kjør:** åpne `index.html` i en nettleser (dobbeltklikk), eller server mappa
@@ -39,10 +39,16 @@ lastes fra et CDN via en `<script>`-tag i `index.html`:
 - **Test / lint:** ingenting er satt opp. Ikke innfør bundler, npm-scripts eller
   testrammeverk uten eksplisitt beskjed — "ingen bygg" er en bevisst
   designbeskrankning, ikke en forglemmelse.
+- **Phaser 4-referanse (lokalt):** Phaser-kilden er shallow-klonet til
+  `vendor/phaser/` (gitignorert — ikke i repoet). Verifiser v4-API mot ekte kode
+  der, særlig `vendor/phaser/skills/*/SKILL.md` (LLM-optimaliserte) og
+  `skills/v3-to-v4-migration/SKILL.md`. v4-fallgruver: `setTintFill` fjernet (bruk
+  `setTint`+`setTintMode`), partikler bruker `emitting`/`setParticleSpeed`,
+  verdens-Y er fortsatt Y-ned (GL-flippen gjelder kun teksturer/shaders).
 
 ## Førende prinsipp: len deg på Phaser
 
-Bruk Phaser 3 sine innebygde systemer (rendering, `Graphics`, partikkel-emittere,
+Bruk Phaser sine innebygde systemer (rendering, `Graphics`, partikkel-emittere,
 scener, Arcade-kollisjon for skip/bullet) i stedet for å reimplementere dem.
 Tiden skal gå til å finjustere spill-*følelse*, ikke til å bygge motor-infrastruktur
 på nytt. De få håndlagde bitene under er ikke unntak fra dette — de finnes
@@ -82,18 +88,25 @@ og det er med vilje — det er her spill-følelsen finjusteres:
   Arcade Physics' drag/friksjon-modell motarbeider XPilots friksjonsløse
   vakuum-følelse, så hastighet integreres direkte. Ingen friksjon i vakuum;
   `maxSpeed` er et mykt tak.
-- **Vegg-kollisjon er manuell sirkel-mot-linje** (liten ~8px skip-hitbox), *ikke*
-  Matter.js — for kontroll over refleksjon-med-skjold vs. instant death-oppførsel.
+- **Vegg-kollisjon er manuell grid-basert** (rute-oppslag `tileAt`, liten ~8px
+  skip-hitbox), *ikke* Matter.js og ikke sirkel-mot-vilkårlig-linje — kartet er et
+  block-tile grid, og dette gir kontroll over refleksjon-med-skjold vs. instant
+  death-oppførsel. (Fase 2: trekant-test for 45°-skråninger.)
 
 Alt annet bruker Phaser: **Arcade Physics for skip-mot-skip og bullet-mot-skip**,
 Graphics for wireframes, partikkel-emittere for eksos, scener for spill/meny/HUD.
 
-### Lyd — Web Audio API direkte
+### Lyd — Web Audio API direkte (Fase 2)
 
 Lyd bruker rå Web Audio API (`AudioContext`, oscillatorer, filtre,
 gain-envelopes), **ikke** Phasers lydmotor, for finere kontroll. All lyd er
 generert — det finnes ingen lyd-assets. Ramp gain med
 `linearRampToValueAtTime` for å unngå klikk.
+
+**Plan:** gjenbruk lydmotoren («soundbed» + SFX) fra solstice-prosjektet
+(`C:\devel\aweussom\javascript\solstice\`, se `audio-spike/audio-system.js`) i
+stedet for å skrive ny. Nye lyder som trengs: skudd (flere varianter), shield
+on/off, rakett-motor (thrust-loop), eksplosjon, fuel-pickup.
 
 ## Visuelle konvensjoner (urokkelig estetikk)
 
@@ -101,8 +114,8 @@ generert — det finnes ingen lyd-assets. Ramp gain med
   gir mening.
 - **Kun neon-wireframe-geometri** — genererte `Graphics`-former, ingen
   sprite-/raster-assets.
-- Jeteksos: varm gradient (oransje→hvit), ADD-blendede Arcade-partikler,
-  emitter-vinkel/-posisjon oppdatert hver frame, `on` styrt av thrust.
+- Jeteksos: varm gradient (oransje→hvit), ADD-blendede partikler, emitter-posisjon/
+  -retning oppdatert hver frame (`setParticleSpeed`), `emitting` styrt av thrust.
 - Vegger: kjølig blå/cyan, ADD. Skip P1: cyan `#00ffff`; skip P2: magenta `#ff00ff`.
 
 ### Neon-referanse: solstice
@@ -170,6 +183,10 @@ blokk-regioner (skråningene gir 45°-kanter), ikke ved å tegne hver blokk.
 **Kollisjon** blir grid-basert (rute-oppslag + trekant for skråninger) — enklere
 og mer robust enn sirkel-mot-vilkårlig-linje, og det er den ekte XPilot-modellen.
 
+**Kanonisk eksempel-kart:** `maps/xpilot-all-133-maps/arena2.map` — les denne for
+et ekte format-eksempel (header + `mapData`-grid med vegger, skråninger, fuel og
+wormholes). Ikke bruk tokens på å lete etter et kart; start her.
+
 ## Fremtidig retning (uavklart — «vi får sjå»)
 
 Ikke implementer dette ennå, men hold arkitekturen åpen for det:
@@ -185,6 +202,9 @@ Ikke implementer dette ennå, men hold arkitekturen åpen for det:
 
 ## Referanser
 
-- XPilot kart-format: http://xpilot.sourceforge.net/map.html
-- Phaser 3 docs: https://newdocs.phaser.io/
-- Neon-estetikk: `C:\devel\aweussom\javascript\solstice\`
+- Phaser 4-kilde + LLM-skills (lokalt, gitignorert): `vendor/phaser/` — særlig
+  `skills/*/SKILL.md` og `skills/v3-to-v4-migration/SKILL.md`
+- Phaser docs: https://docs.phaser.io/
+- Ekte XPilot-kart: `maps/xpilot-all-133-maps/` (eksempel: `arena2.map`)
+- XPilot kildekode (kartformat/tegn-legende/bounce-konstanter): `kekyo/xpilot-ng`
+- Neon-estetikk + lydmotor: `C:\devel\aweussom\javascript\solstice\`
