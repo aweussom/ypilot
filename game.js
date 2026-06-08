@@ -35,13 +35,17 @@ const COLORS = {
 
 const BLOCK = 32;  // piksler per kartrute (verdens-enhet — alltid 32, uansett kart)
 
-// Fast viewport. Kameraet zoomer (≤1) for å vise hele kartet, sentrert. Verdens-
+// Viewport = hele nettleservinduet. Kameraet zoomer for å vise HELE kartet, sentrert
+// og så stort som mulig (zoom kan være >1 for små kart → fyller skjermen). Verdens-
 // koordinater bruker alltid BLOCK=32 så fysikk/skip-følelse er identisk på alle kart.
-const VIEW_W = 1024;
-const VIEW_H = 768;
+function viewW() { return window.innerWidth; }
+function viewH() { return window.innerHeight; }
 // Kart som ville gjort skipet mindre enn dette på skjermen er «kun nettverk»
 // (utelatt fra lokal kart-velger). Se memory lokal-vs-nettverk-kart.
 const MIN_SHIP_PX = 9;
+// Kameraet fyller IKKE skjermen kant-i-kant — la ~20% luft rundt kartet, så man kan
+// manøvrere rundt hindringer ved kanten og se wrap. Justerbar.
+const FIT = 0.8;
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
@@ -99,23 +103,20 @@ function buildTestMap() {
     for (let y = r; y < r + h; y++)
       for (let x = c; x < c + w; x++) tiles[y][x] = 'x';
 
-  // Spawn-punkter i åpne hjørner; angle = retning skipet peker (rad).
+  // Spawn-punkter i åpne hjørner.
   const spawnCells = [
-    { col: 3,        row: 3,        angle: 0 },
-    { col: cols - 4, row: 3,        angle: Math.PI },
-    { col: 3,        row: rows - 4, angle: 0 },
-    { col: cols - 4, row: rows - 4, angle: Math.PI },
+    { col: 3, row: 3 }, { col: cols - 4, row: 3 },
+    { col: 3, row: rows - 4 }, { col: cols - 4, row: rows - 4 },
   ];
   for (const s of spawnCells) tiles[s.row][s.col] = '_';
 
+  // Center-of-gravity er NED som standard; skip spawner med snuten OPP (vekk fra CoG).
   return {
     cols, rows, blockSize: BLOCK,
     widthPx: cols * BLOCK, heightPx: rows * BLOCK,
-    tiles, edgewrap: true,
+    tiles, edgewrap: true, cog: null,
     spawns: spawnCells.map(s => ({
-      x: (s.col + 0.5) * BLOCK,
-      y: (s.row + 0.5) * BLOCK,
-      angle: s.angle,
+      x: (s.col + 0.5) * BLOCK, y: (s.row + 0.5) * BLOCK, angle: -Math.PI / 2,
     })),
   };
 }
@@ -163,20 +164,28 @@ function parseMap(text, fallbackName) {
     tiles.push(row);
   }
 
-  // Spawns fra baser; angle peker mot kartsenteret.
-  const cx = (C * BLOCK) / 2, cy = (R * BLOCK) / 2;
+  // Center-of-gravity: NED som standard (gravitasjonen drar nedover). Skip spawner med
+  // snuten VEKK fra CoG → OPP som standard. Kart med `gravitypoint` (tile-koord) gir et
+  // punkt-CoG, og da peker snuten vekk fra det punktet.
+  let cog = null;
+  const gp = (header.gravitypoint || '').match(/(-?\d+)\s*,\s*(-?\d+)/);
+  if (gp) cog = { x: (parseInt(gp[1], 10) + 0.5) * BLOCK, y: (parseInt(gp[2], 10) + 0.5) * BLOCK };
+  const spawnAngle = (x, y) =>
+    cog ? ((x === cog.x && y === cog.y) ? -Math.PI / 2 : Math.atan2(y - cog.y, x - cog.x))
+        : -Math.PI / 2;   // CoG ned → snute opp
+
   const spawns = [];
   for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
     const ch = tiles[r][c];
     if (ch === '_' || (ch >= '0' && ch <= '9')) {
       const x = (c + 0.5) * BLOCK, y = (r + 0.5) * BLOCK;
-      spawns.push({ x, y, angle: Math.atan2(cy - y, cx - x) });
+      spawns.push({ x, y, angle: spawnAngle(x, y) });
     }
   }
   if (spawns.length === 0) {            // fallback: kvart-punkter
     for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]]) {
       const x = fx * C * BLOCK, y = fy * R * BLOCK;
-      spawns.push({ x, y, angle: Math.atan2(cy - y, cx - x) });
+      spawns.push({ x, y, angle: spawnAngle(x, y) });
     }
   }
 
@@ -191,17 +200,14 @@ function parseMap(text, fallbackName) {
   return {
     cols: C, rows: R, blockSize: BLOCK,
     widthPx: C * BLOCK, heightPx: R * BLOCK,
-    tiles, edgewrap: wrap, gravity,
+    tiles, edgewrap: wrap, gravity, cog,
     spawns, name: header.mapname || fallbackName || 'kart', header,
   };
 }
 
-// Kamera-zoom for å vise hele kartet (≤ 1).
-function mapZoom(map) { return Math.min(1, VIEW_W / map.widthPx, VIEW_H / map.heightPx); }
-
-// Lokalt spillbart hvis skipet ikke blir for lite på skjermen ved full kart-zoom.
+// Lokalt spillbart hvis skipet ikke blir for lite på skjermen når hele kartet vises.
 function isLocallyPlayable(wTiles, hTiles) {
-  const zoom = Math.min(1, VIEW_W / (wTiles * BLOCK), VIEW_H / (hTiles * BLOCK));
+  const zoom = FIT * Math.min(viewW() / (wTiles * BLOCK), viewH() / (hTiles * BLOCK));
   return BLOCK * zoom >= MIN_SHIP_PX;
 }
 
@@ -280,6 +286,14 @@ function makeTextures(scene) {
  * tom (kontur), ikke fylte blokker. Statisk, tegnet én gang.
  * ------------------------------------------------------------------------- */
 function renderMap(scene, map) {
+  // Spillefelt-bakgrunn + ramme — viser hvor kartet (og dermed wrap-grensen) går.
+  const bg = scene.add.graphics();
+  bg.fillStyle(0x0a0f1e, 1);            // litt lysere enn bakgrunnen utenfor (#05060a)
+  bg.fillRect(0, 0, map.widthPx, map.heightPx);
+  bg.lineStyle(2, 0x2a4f8f, 0.9);       // svak ramme markerer wrap-grensen
+  bg.strokeRect(0, 0, map.widthPx, map.heightPx);
+  bg.setDepth(-1);
+
   const g = scene.add.graphics();
   g.lineStyle(1.5, COLORS.wall, 0.9);
   const bs = map.blockSize;
@@ -463,6 +477,15 @@ class Ship {
     });
     this.thrust.setDepth(3);
 
+    // Respawn-markør + nedtelling — vises der skipet kommer tilbake.
+    this.marker = scene.add.image(this.spawn.x, this.spawn.y, 'ship')
+      .setTint(this.color).setBlendMode(Phaser.BlendModes.ADD)
+      .setRotation(this.spawn.angle).setAlpha(0.3).setDepth(2).setVisible(false);
+    this.countText = scene.add.text(this.spawn.x, this.spawn.y - BLOCK, '', {
+      fontFamily: 'monospace', fontSize: '28px',
+      color: '#' + this.color.toString(16).padStart(6, '0'),
+    }).setOrigin(0.5).setDepth(7).setVisible(false);
+
     this.applySpawn();
   }
 
@@ -478,11 +501,16 @@ class Ship {
     this.vx = 0; this.vy = 0;
     this.alive = true;
     this.invuln = PHYSICS.spawnInvuln;
+    this.marker.setVisible(false);
+    this.countText.setVisible(false);
   }
 
   update(dtScale) {
     if (!this.alive) {
       this.respawnTimer -= dtScale;
+      // Nedtelling som viser hvor skipet kommer tilbake.
+      this.countText.setText(String(Math.max(0, Math.ceil(this.respawnTimer / 60))));
+      this.countText.setScale(1 / this.scene.cameras.main.zoom);   // konstant skjermstørrelse
       if (this.respawnTimer <= 0) {
         this.angle = this.spawn.angle;
         this.applySpawn();
@@ -509,8 +537,9 @@ class Ship {
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
     }
 
-    // Global gravitasjon (justerbar via slider, nedover)
-    this.vy += GRAVITY * dtScale;
+    // Global gravitasjon (nedover) — AV mens spawn-usårbarheten varer, så man ikke
+    // dras rett i en vegg det første sekundet.
+    if (this.invuln <= 0) this.vy += GRAVITY * dtScale;
 
     // Mykt fartstak
     const sp = Math.hypot(this.vx, this.vy);
@@ -572,6 +601,8 @@ class Ship {
     this.sprite.body.enable = false;
     this.respawnTimer = PHYSICS.respawnDelay;
     this.scene.explosion.explode(28, this.x, this.y);
+    this.marker.setVisible(true);
+    this.countText.setVisible(true);
   }
 }
 
@@ -584,9 +615,15 @@ class GameScene extends Phaser.Scene {
   create() {
     this.map = MAP;
 
-    // Kamera: zoom for å vise hele kartet (≤1), sentrert. Verden kan være > viewport.
-    this.cameras.main.setZoom(mapZoom(this.map));
-    this.cameras.main.centerOn(this.map.widthPx / 2, this.map.heightPx / 2);
+    // Kamera: zoom for å vise HELE kartet, sentrert og så stort som mulig.
+    // Følger vindusstørrelsen (RESIZE), så kartet fyller skjermen.
+    const fitCamera = () => {
+      const cam = this.cameras.main;
+      cam.setZoom(FIT * Math.min(cam.width / this.map.widthPx, cam.height / this.map.heightPx));
+      cam.centerOn(this.map.widthPx / 2, this.map.heightPx / 2);
+    };
+    fitCamera();
+    this.scale.on('resize', fitCamera);
 
     makeTextures(this);
     renderMap(this, this.map);
@@ -693,9 +730,7 @@ async function boot() {
 
   new Phaser.Game({
     type: Phaser.AUTO,
-    parent: 'game',
-    width: VIEW_W,
-    height: VIEW_H,
+    scale: { mode: Phaser.Scale.RESIZE, parent: 'game', width: viewW(), height: viewH() },
     backgroundColor: '#05060a',
     physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
     scene: [GameScene],
