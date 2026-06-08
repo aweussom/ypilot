@@ -419,35 +419,52 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
 
 ---
 
-## Fase 1 — MVP (spillbart)
+## Fase 1 — MVP (spillbart) ✅
 
-1. Phaser-scene med ett hardkodet testkart (rektangulær bane)
-2. To skip, full fysikk, wrap
-3. Bullets, kollisjon skip-mot-skip
-4. Vegg-kollisjon (instant death, ingen shield ennå)
-5. Jeteksos-partikler med ADD blending
-6. Score-display
+1. Phaser-scene med hardkodet testkart (tile-grid) ✅
+2. To skip, full newtonsk fysikk, wrap ✅
+3. Bullets, kollisjon skip-mot-skip ✅
+4. Vegg-kollisjon (grid-basert, instant death — ingen shield ennå) ✅
+5. Jeteksos-partikler med ADD blending ✅
+6. Score-display ✅
+7. Justerbar gravitasjon (slider 0–0.50, persistert i localStorage) ✅
 
 ## Fase 2 — XPilot-komplett
 
-7. `.map`-parser og kartlasting
-8. Shield-mekanikk (energi, refleksjon)
-9. Fuel-pods
-10. Gravity wells
-11. Radar (mini-map i hjørnet)
-12. Web Audio lyd
+- `.map`-parser og kartlasting (tile-grid, se Kart-format)
+- **Start-punkter:** gjenbruk basene i kartene (`_` + lag-baser `0`–`9`) som
+  spawn-punkter (allerede i de fleste kart).
+- **AI-spiller** (prioritert — tidlig, så man slipper å styre to skip alene).
+  To mulige veier: (a) Chrome innebygd AI (stjel kode fra `..\tabtabtab\`), eller
+  (b) LLM-pre-rendrede AI-paths per kart — choke-points, sniping-steder, ruter
+  (utnytt at en kraftig LLM kan «se» kartgeometrien bedre enn de fleste). Dette er
+  i praksis **LLM-«enriching»** av kartdata (mønster brukeren bruker mye — stjel
+  fra `..\tabtabtab\` og `C:\devel\q-free\geomap-united-nations\sweden\llm-benchmark`).
+- **Kart-navigator:** velger med terningkast-rating (1–6), score-sortering
+  (terningkast 1 under uvurderte) og kart-preview (thumbnail av tile-gridet).
+- Shield-mekanikk (energi, refleksjon, skjold-bounce-quirk — se Følelses-quirks).
+- Fuel-pods.
+- Gravity wells (per-kart; `.map`-headerens gravitasjon setter også slider-default).
+- Radar (mini-map i hjørnet).
+- Web Audio lyd — gjenbruk Solstice-lydmotor + nye SFX (skudd, shield on/off,
+  rakett-motor, eksplosjon).
+- (Senere) Sky-lagring av innstillinger/highscores via Google (tabtabtab-kode).
 
 ## Fase 3 — Turboraketti-lag
 
-13. Kartene fra Turboraketti gjenskapt i `.map`-format
-14. Eventuelle ekstra våpen fra originalspillet
-15. Turboraketti-spesifikk balansering
+- Kartene fra Turboraketti gjenskapt i `.map`-format.
+- **Rakettstrålen som våpen:** eksosen gjør skade + dytter motstanderen (mer dytt
+  mot skjold = større flate), torque fra off-center treff → uventet spinn → krasj.
+  Klassisk Turboraketti-taktikk.
+- Eventuelle ekstra våpen fra originalspillet.
+- Turboraketti-spesifikk balansering.
 
 ---
 
 ## Referanser
 
-- XPilot kildekode (original C): https://github.com/calvinmorrow/OpenXPilot
-- XPilot map-format dokumentasjon: http://xpilot.sourceforge.net/map.html
-- Phaser 3 docs: https://newdocs.phaser.io/
-- Phaser partikler ADD-blending eksempel: https://phaser.io/examples/v3/view/game-objects/particle-emitter/add-blend-mode
+- XPilot-kilde (kartformat, tegn-legende, bounce-konstanter, default-taster):
+  https://github.com/kekyo/xpilot-ng
+- Phaser 4 docs: https://docs.phaser.io/ (lokalt: `vendor/phaser/`, gitignorert)
+- Ekte XPilot-kart: `maps/xpilot-all-133-maps/` (eksempel: `arena2.map`)
+- Neon-estetikk + lydmotor: `..\solstice\` — sky-lagring: `..\tabtabtab\`

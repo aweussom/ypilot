@@ -52,7 +52,27 @@
       font-size: 12px;
       align-self: center;
     }
-  </style>
+    /* Innstillinger — egen DOM-rad nederst (pointer-events på, i motsetning til #hud) */
+    #settings {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      font-size: 12px;
+      letter-spacing: 1px;
+      color: #4488ff;
+      background: rgba(5, 6, 10, 0.6);
+      border: 1px solid rgba(68, 136, 255, 0.35);
+      border-radius: 4px;
+      user-select: none;
+    }
+    #settings input[type=range] { accent-color: #4488ff; cursor: pointer; width: 160px; }
+    #settings #grav-val { color: #00ffff; min-width: 3.4em; text-align: right; }
+</style>
 </head>
 <body>
   <div id="game"></div>
@@ -60,6 +80,11 @@
     <div class="p1" id="score-p1">P1  0</div>
     <div class="hint">P1: W A D · SPACE &nbsp;&nbsp; P2: &larr; &uarr; &rarr; · ENTER</div>
     <div class="p2" id="score-p2">P2  0</div>
+  </div>
+  <div id="settings">
+    <label for="grav">Gravitasjon</label>
+    <input id="grav" type="range" min="0" max="0.5" step="0.005" value="0" autocomplete="off">
+    <span id="grav-val">0.000</span>
   </div>
   <script src="game.js"></script>
 </body>

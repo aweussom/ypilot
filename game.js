@@ -35,6 +35,41 @@ const COLORS = {
 const BLOCK = 32;  // piksler per kartrute
 
 /* ----------------------------------------------------------------------------
+ * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
+ * huskes mellom sesjoner i localStorage. Leses i Ship.update. I Fase 2 kan
+ * per-kart-gravitasjon fra `.map`-headeren sette default-verdien her.
+ * ------------------------------------------------------------------------- */
+const GRAVITY_KEY = 'jpilot.gravity';
+const GRAVITY_MAX = 0.50;   // absolutt tak — over dette er uaktuelt
+let GRAVITY = 0;
+
+// Tuning-invariant (IKKE hard-klampet her): gravitasjonen bør aldri være høyere enn
+// at rakettstrålen greit kan stoppe skipet selv i høy fart innen X px. Balanseres
+// senere via gravitasjon og/eller strålestyrke. Ved dagens thrustForce (0.18) er det
+// praktiske spillbare området derfor lavt; slideren tillater likevel utforsking opp
+// til det absolutte taket.
+function clampGravity(v) { return Math.min(Math.max(0, v), GRAVITY_MAX); }
+
+function setupGravityControl() {
+  let saved = NaN;
+  try { saved = parseFloat(localStorage.getItem(GRAVITY_KEY)); } catch (e) { /* privat modus */ }
+  if (!Number.isNaN(saved)) GRAVITY = clampGravity(saved);
+
+  const slider = document.getElementById('grav');
+  const out = document.getElementById('grav-val');
+  if (!slider) return;
+
+  const sync = () => {
+    GRAVITY = clampGravity(parseFloat(slider.value) || 0);
+    if (out) out.textContent = GRAVITY.toFixed(3);
+    try { localStorage.setItem(GRAVITY_KEY, String(GRAVITY)); } catch (e) { /* privat modus */ }
+  };
+  slider.value = String(GRAVITY);
+  slider.addEventListener('input', sync);
+  sync();
+}
+
+/* ----------------------------------------------------------------------------
  * Testkart — hardkodet som tile-grid (forward-kompatibelt med Fase 2s
  * parseMap). Åpne kanter (wrap), interne vegg-klynger for å teste vegg-død.
  * 'x' = vegg, ' ' = tom, '_' = spawn-markør (åpen rute).
@@ -271,6 +306,9 @@ class Ship {
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
     }
 
+    // Global gravitasjon (justerbar via slider, nedover)
+    this.vy += GRAVITY * dtScale;
+
     // Mykt fartstak
     const sp = Math.hypot(this.vx, this.vy);
     if (sp > PHYSICS.maxSpeed) {
@@ -429,6 +467,8 @@ class GameScene extends Phaser.Scene {
 /* ----------------------------------------------------------------------------
  * Boot
  * ------------------------------------------------------------------------- */
+setupGravityControl();
+
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
