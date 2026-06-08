@@ -1,0 +1,147 @@
+# Created by xmapedit on Sun Jun 12 21:57:09 1994
+#
+# TEAMBALL 1.0 by DR.DEATH <boyns@sdsu.edu>
+#
+
+playerStartsShielded:no
+allowplayercrashes:no
+targetkillteam:yes
+targetteamcollision:no
+treasurekillteam:no
+treasurecollisiondestroys:yes
+treasurecollisionmaykill:no
+teamassign:yes
+mineswallbounce:yes
+itemswallbounce:yes
+ballswallbounce:yes
+shotswallbounce:no
+allownukes:yes
+allowclusters:no
+allowshields:no
+allowmodifiers:yes
+allowlasermodifiers:yes
+playerstartsshielded:yes
+minesonradar:yes
+ecmsreprogrammines:yes
+teamimmunity:yes
+maxitemdensity:0.1
+movingitemprob:1.0
+itemprobmult:0.001
+dropitemonkillprob:1.0
+minefusetime:0
+itemmissileprob:0
+itemlaserprob:0
+itemcloakprob:0
+itemautopilotprob:0
+itemsensorprob:0
+itememergencyshieldprob:0
+itemwideangleprob:0
+itemrearshotprob:0
+itemecmprob:0.9
+itemafterburnerprob:0.8
+itemenergypackprob:0.4
+itememergencythrustprob:0.8
+itemtractorbeamprob:0.8
+itemmineprob:0.8
+itemtankprob:0.5
+itemtransporterprob:0.4
+initialautopilots:4
+initialafterburners:1
+initialtractorbeams:1
+
+mapwidth : 57
+mapheight : 83
+mapname : TEAMBALL
+mapauthor : DR.DEATH <boyns@sdsu.edu>
+edgewrap : no
+edgebounce : yes
+teamplay : yes
+limitedvisibility : no
+gravity : 0.0
+maxplayershots : 0
+
+mapData: \multiline: EndOfMapdata
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxs                     axxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxs                       axxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxs                         axxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxs                           axxxxxxxxxxxxxx
+xxxxxxxxxxxxxs                             axxxxxxxxxxxxx
+xxxxxxxxxxxxs              q#w              axxxxxxxxxxxx
+xxxxxxxxxxxs              qxxxw              axxxxxxxxxxx
+xxxxxxxxxxs              qx***xw              axxxxxxxxxx
+xxxxxxxxxs              qxs   axw              axxxxxxxxx
+xxxxxxxxs              qxs     axw              axxxxxxxx
+xxxxxxxs              qxs       axw              axxxxxxx
+xxxxxxs               xs         ax               axxxxxx
+xxxxxs                                             axxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               axxxx
+xxxxx                                                   x
+xxxxx                                                   x
+xxxxx                                                   x
+xxxxx                                               # 1 x
+xxxxx                                               # 1 x
+xxxxx                                               # 1 x
+xxxxx                                               # 1 x
+xxxxx                                               # 1 x
+xxxxx                                               # 1 x
+xxxxx                                               x   x
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                     q   w                     xxxxx
+xxxxx                    qs   aw                    xxxxx
+xxxxx                                               xxxxx
+xxxxx                       #                       xxxxx
+xxxxx                                               xxxxx
+xxxxx                    aw   qs                    xxxxx
+xxxxx                     a   s                     xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxx                                               xxxxx
+xxxxs                                               xxxxx
+x                                                   xxxxx
+x                                                   xxxxx
+x                                                   xxxxx
+x                                                   xxxxx
+x 2 #                                               xxxxx
+x 2 #                                               xxxxx
+x 2 #                                               xxxxx
+x 2 #w                                             qxxxxx
+x 2 #xw               xw         qx               qxxxxxx
+x 2 #xxw              axw       qxs              qxxxxxxx
+x   xxxxw              axw     qxs              qxxxxxxxx
+xxxxxxxxxw              axw   qxs              qxxxxxxxxx
+xxxxxxxxxxw              ax***xs              qxxxxxxxxxx
+xxxxxxxxxxxw              axxxs              qxxxxxxxxxxx
+xxxxxxxxxxxxw              a#s              qxxxxxxxxxxxx
+xxxxxxxxxxxxxw                             qxxxxxxxxxxxxx
+xxxxxxxxxxxxxxw                           qxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxw                         qxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxw                       qxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxw                     qxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EndOfMapdata
