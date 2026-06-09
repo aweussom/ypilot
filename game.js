@@ -592,10 +592,33 @@ function renderMap(scene, map) {
   // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
   scene.wallMap = map;
   scene.rawLoops = (readLook() !== 'trad') ? traceWallLoops(map) : null;
-  // NB: RenderTexture-baking ble forsøkt (Phaser 4 `add.renderTexture` + `draw`) men
-  // rendret ingenting synlig — droppet inntil videre. Vegger tegnes direkte (live graphics);
-  // geometrien er BUNDET (capped Chaikin + grov oppdeling) så det holder seg spillbart.
-  scene.wallRT = null;
+
+  // BAKING (ytelse): bak vegg-lagene til ÉN DynamicTexture og vis dem som én quad,
+  // i stedet for å la Phaser re-tessellere titusenvis av linjesegmenter hver frame.
+  // Nøkkelen forrige forsøk bommet på: i Phaser 4 KØER `dt.draw(...)` bare kommandoer i
+  // et buffer — man MÅ kalle `dt.render()` for å flushe dem til teksturen (se
+  // vendor/phaser/src/textures/DynamicTexture.js#render). Gjøres i rebuildNeonWalls.
+  //
+  // GPU-tekstur-tak: store kart (f.eks. kits ~6400px) kan overstige maks tekstur-størrelse,
+  // så vi caper til 4096 og skalerer visnings-image-et tilsvarende opp. Faller tilbake til
+  // live graphics hvis DynamicTexture ikke kan lages (Canvas-renderer e.l.).
+  const MAX_TEX = 4096;
+  scene.wallTexKey = 'wallbake';
+  if (scene.wallImage) { scene.wallImage.destroy(); scene.wallImage = null; }
+  if (scene.textures.exists(scene.wallTexKey)) scene.textures.remove(scene.wallTexKey);
+  const s = Math.min(1, MAX_TEX / map.widthPx, MAX_TEX / map.heightPx);
+  scene.wallBakeScale = s;
+  let dt = null;
+  try {
+    dt = scene.textures.addDynamicTexture(scene.wallTexKey, Math.ceil(map.widthPx * s), Math.ceil(map.heightPx * s));
+  } catch (e) { console.warn('DynamicTexture-baking utilgjengelig — bruker live graphics.', e); }
+  scene.wallDT = dt;
+  if (dt) {
+    // Bakte vegger vises ADD over bg-en — speiler den forrige live-ADD-stakken.
+    scene.wallImage = scene.add.image(0, 0, scene.wallTexKey)
+      .setOrigin(0, 0).setDepth(0).setScale(1 / s)
+      .setBlendMode(Phaser.BlendModes.ADD);
+  }
   rebuildNeonWalls(scene, clampRound(readRound()));
 }
 
@@ -610,12 +633,16 @@ function rebuildNeonWalls(scene, rounding) {
   let drawInto;
   if (isNew && scene.rawLoops) {
     // Chaikin-glatt (avrunding) → del opp → organisk noise-forskyvning → siste glatting.
-    // Chaikin er capet (2^n punkt-eksplosjon) og oppdelingen er grov, så punkt-antallet
-    // holdes BUNDET — vegger tegnes direkte hver frame (ingen RT), så dette må være billig.
-    const cap = Math.min(rounding, 4);
+    // Når vi BAKER (scene.wallDT) tegnes geometrien kun ÉN gang inn i teksturen, så vi kan
+    // kjøre full Avrunding og tett oppdeling. Faller vi tilbake til live graphics (tegnes
+    // hver frame), holdes punkt-antallet BUNDET (capped Chaikin + grov oppdeling) så det
+    // forblir spillbart.
+    const baking = !!scene.wallDT;
+    const cap = baking ? rounding : Math.min(rounding, 4);
+    const subLen = baking ? 4 : 10;
     const loops = scene.rawLoops.map(l => {
       let p = chaikin(l, cap);
-      if (ORGANIC > 0) { p = subdivideLoop(p, 10); p = organicDisplace(p, ORGANIC, DETAIL); p = chaikin(p, 1); }
+      if (ORGANIC > 0) { p = subdivideLoop(p, subLen); p = organicDisplace(p, ORGANIC, DETAIL); p = chaikin(p, 1); }
       return p;
     });
     drawInto = (g, w, color, alpha) => {
@@ -650,22 +677,27 @@ function rebuildNeonWalls(scene, rounding) {
     { w: 2,               c: 0xdff0ff,    a: 0.95,                depth: 1 },
   ];
 
-  // Rydd forrige (RT klares; live-graphics destrueres).
+  // Rydd forrige (DT klares under; live-graphics destrueres).
   const old = scene.neon;
   if (old && old.liveGfx) old.liveGfx.forEach(g => g && g.destroy());
 
-  if (scene.wallRT) {
-    // BAKE: tegn lagene til offscreen-graphics → inn i RenderTexturen (én gang), riv offscreen.
+  if (scene.wallDT) {
+    // BAKE: tegn de tre ADD-lagene til offscreen-graphics → inn i DynamicTexturen ÉN gang.
+    // Lagene er ADD-blendet, og DynamicTextureHandler honorerer hvert objekts blendMode
+    // (DRAW-kommando) → glødet akkumulerer korrekt inne i teksturen. Skaler ned ved cap.
+    const sc = scene.wallBakeScale || 1;
     const offs = layers.map(L => {
       const g = scene.make.graphics({ add: false });
       drawInto(g, L.w, L.c, L.a);
       g.setBlendMode(Phaser.BlendModes.ADD);
+      if (sc !== 1) g.setScale(sc);
       return g;
     });
-    scene.wallRT.clear();
-    scene.wallRT.draw(offs, 0, 0);
+    scene.wallDT.clear();
+    scene.wallDT.draw(offs, 0, 0);
+    scene.wallDT.render();   // ← flush av kommandobufferet (det forrige forsøk glemte)
     offs.forEach(g => g.destroy());
-    scene.neon = { rt: scene.wallRT, fuel: scene.fuelGfx };
+    scene.neon = { dt: scene.wallDT, image: scene.wallImage, fuel: scene.fuelGfx };
   } else {
     // Fallback: live graphics (hvis RT ikke kunne lages).
     const live = layers.map(L => {
@@ -1534,14 +1566,14 @@ class GameScene extends Phaser.Scene {
     if (this.over) return;
     const dtScale = Math.min(delta / (1000 / 60), 2);  // clamp ved hakking
 
-    // Pulserende neon: vegg-glødet «puster». Baket RT → animér hele teksturens alpha
+    // Pulserende neon: vegg-glødet «puster». Baket DT → animér hele image-ets alpha
     // (billig, én quad). Fallback (live graphics) → pust halo-lagene som før.
     // «Glød» styres av kamera-Glow-filteret, som blomstrer de bakte, lyse veggene.
     if (this.neon) {
       const t = time * 0.001;
       const breathe = 0.5 + 0.5 * Math.sin(t * 1.4);
-      if (this.neon.rt) {
-        this.neon.rt.setAlpha(0.82 + 0.18 * breathe);
+      if (this.neon.image) {
+        this.neon.image.setAlpha(0.82 + 0.18 * breathe);
       } else if (this.neon.glowWide) {
         const gm = GLOW_STRENGTH / 1.6;
         this.neon.glowWide.setAlpha((0.45 + 0.55 * breathe) * gm);

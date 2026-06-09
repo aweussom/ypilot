@@ -33,11 +33,15 @@ bloom + pulserende halo. **Tuning-panel** (fanene Bevegelse/Landing/Drivstoff/Ka
 live-sliders bundet til `PHYSICS`/render-tilstand, persistert i `localStorage['ypilot.tuning']`
 (+ Eksporter-popup). Fart-avhengig sving, bakke-lading, tunbart sprett/blast.
 
-**NESTE OPPGAVE: ytelse — bak vegger til tekstur.** Organiske konturer tegnes i dag direkte
-hver frame → hakker ved høy Avrunding/Organisk/Detalj (geometri er capet for å holde det
-spillbart). Se **`TODO.md` → «PLAN: Bake vegger til tekstur»** (detaljert, egen branch
-`perf/dynamic-texture-bake`, prøv `addDynamicTexture`/`DynamicTexture.draw`). Deretter: lyd
-(Solstice-motor, memory `audio-fra-solstice`), wormholes (`TODO.md`), radar.
+**Vegg-baking ✅ (branch `perf/dynamic-texture-bake`):** organiske vegg-lag bakes til ÉN
+`DynamicTexture` (`scene.wallImage`, vist som én ADD-quad) i stedet for å re-tessellere
+linjesegmenter hver frame. Geometri-capet er fjernet ved baking → full Avrunding/Organisk/
+Detalj kjører 60 FPS (verifisert på Kits 200×200). **Nøkkel:** i Phaser 4 må `dt.render()`
+kalles etter `dt.draw(...)` for å flushe kommandobufferet (forrige RT-forsøk glemte dette).
+Cap 4096 + skalering for store kart; live-graphics-fallback beholdt. Se `TODO.md`.
+
+**NESTE OPPGAVER:** lyd (Solstice-motor, memory `audio-fra-solstice`), wormholes (`TODO.md`),
+radar, «fyll vegg-innside med mycel-nettverk» (`TODO.md`).
 
 > **Stor-kart-begrensning (kjent):** scroll-kameraet sentrerer momentant på skipet, så
 > på wrap-kart vises tomrom utenfor kartkanten (ingen toroidal dobbel-rendering ennå).
