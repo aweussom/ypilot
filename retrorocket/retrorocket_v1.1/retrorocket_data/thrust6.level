@@ -1,0 +1,38 @@
+##################
+# Thrust level 6 #
+##################
+
+width 656
+height 1720
+
+info thrust6/thrust6_Info.bin 
+
+background thrust6/thrust6_Tiles.bin thrust6/thrust6_Map.bin thrust6/thrust6_Pal.bin
+
+collision thrust6/thrust6_col_Tiles.bin thrust6/thrust6_col_Map.bin 
+
+ball 384 1424 thrust.ball
+buttonleft 520 1152
+buttonright 408 1280
+fuel 368 952
+fuel 520 648
+gunnw 440 680
+gunnw 440 856
+gunnw 448 1360
+gunse 248 1040
+gunse 368 592
+gunse 384 1320
+gunse 408 1240
+gunsw 360 376
+gunsw 368 1064
+gunsw 440 808
+gunsw 552 600
+powerplant 440 1488
+start 136 200
+start 416 616
+start 376 792
+start 312 1008
+start 464 1136
+door 472 1192 560 1224
+
+score 4000

@@ -1,0 +1,37 @@
+##################
+# Ekolos field #
+##################
+
+include tr_gameparams.inc
+include tr_introtext.inc
+
+width 640
+height 640
+
+info ekolos/ekolos_Info.bin 
+
+# tiles map palette
+foreground ekolos/ekolos_Tiles.bin ekolos/ekolos_Map.bin ekolos/ekolos_Pal.bin
+
+# tiles map
+collision ekolos/ekolos_col_Tiles.bin ekolos/ekolos_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 264 207 44 h 0
+platform 320 445 44 h 1
+platform 453  79 50
+
+# zone x, y, width, height, force x, force y, flags
+# Flags:
+#   g : gravity field
+#   l : liquid
+
+zone 31 148 43 188 0 -0.02 g
+

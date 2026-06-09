@@ -1,0 +1,9 @@
+#######################
+# TurboRaketti Ship 0 #
+#######################
+
+lives 99
+include trship.inc
+
+ship_bitmap trship/trship_BM.bin
+

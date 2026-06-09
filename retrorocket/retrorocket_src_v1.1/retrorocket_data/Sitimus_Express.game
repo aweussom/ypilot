@@ -1,0 +1,60 @@
+##################
+# Sitimus field #
+##################
+
+minplayers 1
+include tr_gameparams.inc
+include tr_introtext_lap.inc
+
+width 640
+height 640
+
+info sitimus/sitimus_Info.bin 
+
+# tiles map palette
+background sitimus/sitimus_Tiles.bin sitimus/sitimus_Map.bin sitimus/sitimus_Pal.bin
+
+# tiles map
+collision sitimus/sitimus_col_Tiles.bin sitimus/sitimus_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 120 617 57 h 0
+platform 532 203 57 h 1
+platform 339 417 67 g
+platform 339 209 67 a r
+platform 115 209 91 #parking
+platform 131 417 67 b r
+
+# waypoint x, y, length, flags...
+# first is start, last is goal
+# Flags:
+#   h       : horizontal waypoint line
+#   v       : vertical waypoint line
+#   u/d/l/r : only when passing up/down/left/right-wards
+
+waypoint  15 215 85 h #start
+waypoint  15 430  85 h d
+waypoint 225 410  85 h u
+waypoint 375 225  85 v r
+waypoint 430 105  85 h u
+waypoint 110  15  85 v l
+waypoint  15 175  85 h #goal
+
+# zone x, y, width, height, force x, force y, flags
+# Flags:
+#   g : gravity field
+#   l : liquid
+
+zone 20 20 73 415 0 0.02 g
+zone 20 436 207 73 0.02 0 g
+zone 228 301 73 205 0 -0.02 g
+zone 228 228 205 73 0.02 0 g
+zone 435 93 73 205 0 -0.02 g
+zone 93 20 415 73 -0.02 0 g

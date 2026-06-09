@@ -1,0 +1,29 @@
+level thrust1.level
+level thrust2.level
+level thrust3.level
+level thrust4.level
+level thrust5.level
+level thrust6.level
+
+include thrust_params.inc
+
+introtext Mission: Bring the ball to
+introtext outer space. 
+introtext 
+introtext To collect the ball: hover
+introtext just above the ball, press and
+introtext hold the beam button and
+introtext thrust away from the ball.
+introtext
+introtext The beam can also be used for
+introtext filling gas from gas
+introtext containers.
+introtext
+introtext If you shoot the powerplant,
+introtext enemy gun stations will stop
+introtext shooting for a while. 
+introtext
+introtext Shoot at buttons to open
+introtext doors.
+
+thrustmode

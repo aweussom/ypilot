@@ -1,0 +1,20 @@
+##################
+# Thrust level 1 #
+##################
+
+width 656
+height 480
+
+info thrust1/thrust1_Info.bin 
+
+background thrust1/thrust1_Tiles.bin thrust1/thrust1_Map.bin thrust1/thrust1_Pal.bin
+
+collision thrust1/thrust1_col_Tiles.bin thrust1/thrust1_col_Map.bin 
+
+start 104 176
+ball 248 248 thrust.ball
+fuel 96 232
+gunne 160 248
+powerplant 304 216
+
+score 2000

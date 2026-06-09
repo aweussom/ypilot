@@ -1,0 +1,121 @@
+###############################################################################
+#
+# Makefile for RetroRocket, main DS version
+#
+###############################################################################
+
+RETROROCKETDATA = ../retrorocket_data/
+
+ARCH = -mthumb -mthumb-interwork
+
+AS  = arm-eabi-as
+CC  = $(DEVKITARM)/bin/arm-eabi-gcc
+CPP = $(DEVKITARM)/bin/arm-eabi-g++
+LD  = $(DEVKITARM)/bin/arm-eabi-g++
+OBJCOPY  = $(DEVKITARM)/bin/arm-eabi-objcopy
+NDSTOOL  = $(DEVKITARM)/bin/ndstool
+DSBUILD  = $(DEVKITARM)/bin/dsbuild
+DLDITOOL = $(DEVKITARM)/bin/dlditool
+DLDI = $(DEVKITPRO)/dldi/r4tf
+
+# uncomment to enable profiling
+#CFLAGS_PROF = -finstrument-functions -mpoke-function-name -DPROF
+#LDFLAGS_PROF = -Wl,--print-map -Wl,--cref
+#OBJECTS_PROF = cyg-profiler/cyg-profile.o
+
+#REVDEF = -D'REV="SVN $(shell svnversion -n .)"'
+REVDEF = -D'REV="Release 1.1"'
+
+CFLAGS = -Wall -g -O3 -fno-strict-aliasing -Wwrite-strings \
+	-I$(DEVKITPRO)/PAlib/include/nds \
+	-I$(DEVKITPRO)/libnds/include \
+	-I$(DEVKITPRO)/libnds/include/nds \
+	-I$(DEVKITPRO)/liblobby/include \
+	-I$(DEVKITPRO)/liblobby/common/include \
+	-I$(DEVKITPRO)/dswifi/include \
+	-I$(DEVKITPRO)/libfat/include \
+	-I$(DEVKITPRO)/mikmod/include \
+	-DARM9 -DNDS $(REVDEF)
+
+LDFLAGS = -mthumb-interwork -mno-fpu \
+	-L$(DEVKITPRO)/PAlib/lib \
+	-L$(DEVKITPRO)/libnds/lib \
+	-L$(DEVKITPRO)/liblobby/lib \
+	-L$(DEVKITPRO)/dswifi/lib \
+	-L$(DEVKITPRO)/libfat/lib \
+	-L$(DEVKITPRO)/mikmod/lib \
+	-specs=ds_arm9.specs \
+	$(LDFLAGS_PROF) \
+	-Wl,--wrap,malloc -Wl,--wrap,calloc -Wl,--wrap,realloc -Wl,--wrap,free 
+
+LIBS = -lpa9 -lfat -lnds9 -lmikmod9 -llobby9d
+
+ICON = binfiles/icon.bmp
+
+OBJECTS = \
+	wrap.o \
+        system_ds.o \
+	retrorocket.o mob.o sob.o field.o weapon.o utils.o network.o menu.o \
+	config.o ball.o worldgen.o player.o lobby.o bot.o \
+	$(OBJECTS_PROF)
+
+HEADERS = $(wildcard *.h)
+
+ARM7 = arm7_mikmod_liblobby/retrorocket.arm7
+
+###############################################################################
+
+.PHONY : default
+default : retrorocket.ds.gba
+
+%.ds.gba : %.nds
+	$(DSBUILD) $<
+
+retrorocket.nds : retrorocket.arm9 $(ARM7) $(ICON)
+	$(NDSTOOL) -c $@ -9 $< -7 $(ARM7) \
+		   -b $(ICON) "RetroRocket;GPL"
+	$(DLDITOOL) $(DLDI) $@
+
+%.arm9 : %.elf
+	$(OBJCOPY) -O binary $< $@
+
+retrorocket.elf : $(OBJECTS)
+	$(LD) $(LDFLAGS) $+ $(LIBS) -llobby9d -o $@ | tee ldout.txt
+
+$(ARM7) : arm7_mikmod_liblobby/main.c
+	make -C arm7_mikmod_liblobby
+
+%.o : %.cpp $(HEADERS)
+	$(CPP) $(CFLAGS) $(CFLAGS_PROF) -c $< -o $@
+
+%.o : %.c $(HEADERS)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+###############################################################################
+
+disk.img : $(RETROROCKETDATA)
+	dd if=/dev/zero of=$@ count=32000
+	mkfs.vfat $@
+	mkdir -p /tmp/mnt
+	sudo mount $@ /tmp/mnt -o loop
+	sudo cp -rf $(RETROROCKETDATA) /tmp/mnt
+	sudo umount /tmp/mnt
+
+.PHONY : run
+run : retrorocket.nds disk.img
+	desmume-cli --cflash=disk.img $<
+
+.PHONY : debug
+debug : retrorocket.nds disk.img
+	desmume-cli --cflash=disk.img --arm9gdb=8192 $<
+# 	arm-eabi-gdb -ex "target remote:8192" retrorocket.elf
+
+###############################################################################
+
+.PHONY : clean
+clean :
+	rm -rf *.o $(OBJECTS) *.elf *.arm9 *.nds *ds.gba *bin.h binfiles/*.o \
+		retrorocket disk.img ldout.txt
+	make -C arm7_mikmod_liblobby clean
+
+###############################################################################

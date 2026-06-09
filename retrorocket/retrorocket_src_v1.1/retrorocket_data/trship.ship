@@ -1,0 +1,8 @@
+#######################
+# TurboRaketti Ship 0 #
+#######################
+
+include trship.inc
+
+ship_bitmap trship/trship_BM.bin
+

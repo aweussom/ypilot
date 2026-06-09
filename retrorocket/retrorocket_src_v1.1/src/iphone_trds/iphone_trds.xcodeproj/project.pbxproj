@@ -1,0 +1,324 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 45;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1D3623260D0F684500981E51 /* iphone_trdsAppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 1D3623250D0F684500981E51 /* iphone_trdsAppDelegate.mm */; };
+		1D3623EC0D0F72F000981E51 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D3623EB0D0F72F000981E51 /* CoreGraphics.framework */; };
+		1D60589B0D05DD56006BFB54 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 29B97316FDCFA39411CA2CEA /* main.m */; };
+		1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1D30AB110D05D00D00671497 /* Foundation.framework */; };
+		1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1DF5F4DF0D08C38300B7A737 /* UIKit.framework */; };
+		289E37760D53116900ACCF19 /* MyView.mm in Sources */ = {isa = PBXBuildFile; fileRef = 289E37750D53116900ACCF19 /* MyView.mm */; };
+		C483D5FD0E9BAD9000C30D8C /* retrorocket.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5EA0E9BAD9000C30D8C /* retrorocket.cpp */; };
+		C483D5FE0E9BAD9000C30D8C /* sob.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5EC0E9BAD9000C30D8C /* sob.cpp */; };
+		C483D5FF0E9BAD9000C30D8C /* utils.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5EF0E9BAD9000C30D8C /* utils.cpp */; };
+		C483D6000E9BAD9000C30D8C /* weapon.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5F10E9BAD9000C30D8C /* weapon.cpp */; };
+		C483D6010E9BAD9000C30D8C /* player.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5F30E9BAD9000C30D8C /* player.cpp */; };
+		C483D6020E9BAD9000C30D8C /* network.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5F50E9BAD9000C30D8C /* network.cpp */; };
+		C483D6030E9BAD9000C30D8C /* mob.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5F80E9BAD9000C30D8C /* mob.cpp */; };
+		C483D6040E9BAD9000C30D8C /* ball.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5FA0E9BAD9000C30D8C /* ball.cpp */; };
+		C483D6050E9BAD9000C30D8C /* menu.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D5FB0E9BAD9000C30D8C /* menu.cpp */; };
+		C483D6200E9BB0C200C30D8C /* system_iphone.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C483D61F0E9BB0C200C30D8C /* system_iphone.cpp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1D30AB110D05D00D00671497 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		1D3623240D0F684500981E51 /* iphone_trdsAppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = iphone_trdsAppDelegate.h; sourceTree = "<group>"; };
+		1D3623250D0F684500981E51 /* iphone_trdsAppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = iphone_trdsAppDelegate.mm; sourceTree = "<group>"; };
+		1D3623EB0D0F72F000981E51 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		1D6058910D05DD3D006BFB54 /* iphone_trds.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iphone_trds.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1DF5F4DF0D08C38300B7A737 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		289E37740D53116900ACCF19 /* MyView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MyView.h; sourceTree = "<group>"; };
+		289E37750D53116900ACCF19 /* MyView.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MyView.mm; sourceTree = "<group>"; };
+		29B97316FDCFA39411CA2CEA /* main.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		32CA4F630368D1EE00C91783 /* iphone_trds_Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = iphone_trds_Prefix.pch; sourceTree = "<group>"; };
+		8D1107310486CEB800E47090 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C483D5EA0E9BAD9000C30D8C /* retrorocket.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = retrorocket.cpp; path = ../retrorocket.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5EB0E9BAD9000C30D8C /* retrorocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = retrorocket.h; path = ../retrorocket.h; sourceTree = SOURCE_ROOT; };
+		C483D5EC0E9BAD9000C30D8C /* sob.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = sob.cpp; path = ../sob.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5ED0E9BAD9000C30D8C /* sob.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = sob.h; path = ../sob.h; sourceTree = SOURCE_ROOT; };
+		C483D5EE0E9BAD9000C30D8C /* system.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system.h; path = ../system.h; sourceTree = SOURCE_ROOT; };
+		C483D5EF0E9BAD9000C30D8C /* utils.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = utils.cpp; path = ../utils.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5F00E9BAD9000C30D8C /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = utils.h; path = ../utils.h; sourceTree = SOURCE_ROOT; };
+		C483D5F10E9BAD9000C30D8C /* weapon.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = weapon.cpp; path = ../weapon.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5F20E9BAD9000C30D8C /* weapon.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = weapon.h; path = ../weapon.h; sourceTree = SOURCE_ROOT; };
+		C483D5F30E9BAD9000C30D8C /* player.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = player.cpp; path = ../player.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5F40E9BAD9000C30D8C /* player.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = player.h; path = ../player.h; sourceTree = SOURCE_ROOT; };
+		C483D5F50E9BAD9000C30D8C /* network.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = network.cpp; path = ../network.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5F60E9BAD9000C30D8C /* network.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = network.h; path = ../network.h; sourceTree = SOURCE_ROOT; };
+		C483D5F70E9BAD9000C30D8C /* mob.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = mob.h; path = ../mob.h; sourceTree = SOURCE_ROOT; };
+		C483D5F80E9BAD9000C30D8C /* mob.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = mob.cpp; path = ../mob.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5F90E9BAD9000C30D8C /* ball.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ball.h; path = ../ball.h; sourceTree = SOURCE_ROOT; };
+		C483D5FA0E9BAD9000C30D8C /* ball.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ball.cpp; path = ../ball.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5FB0E9BAD9000C30D8C /* menu.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = menu.cpp; path = ../menu.cpp; sourceTree = SOURCE_ROOT; };
+		C483D5FC0E9BAD9000C30D8C /* menu.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = menu.h; path = ../menu.h; sourceTree = SOURCE_ROOT; };
+		C483D61F0E9BB0C200C30D8C /* system_iphone.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = system_iphone.cpp; path = ../system_iphone.cpp; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1D60588F0D05DD3D006BFB54 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D60589F0D05DD5A006BFB54 /* Foundation.framework in Frameworks */,
+				1DF5F4E00D08C38300B7A737 /* UIKit.framework in Frameworks */,
+				1D3623EC0D0F72F000981E51 /* CoreGraphics.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		080E96DDFE201D6D7F000001 /* Classes */ = {
+			isa = PBXGroup;
+			children = (
+				289E37740D53116900ACCF19 /* MyView.h */,
+				289E37750D53116900ACCF19 /* MyView.mm */,
+				1D3623240D0F684500981E51 /* iphone_trdsAppDelegate.h */,
+				1D3623250D0F684500981E51 /* iphone_trdsAppDelegate.mm */,
+			);
+			path = Classes;
+			sourceTree = "<group>";
+		};
+		1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1D3623EB0D0F72F000981E51 /* CoreGraphics.framework */,
+				1DF5F4DF0D08C38300B7A737 /* UIKit.framework */,
+				1D30AB110D05D00D00671497 /* Foundation.framework */,
+			);
+			name = "Linked Frameworks";
+			sourceTree = "<group>";
+		};
+		1058C7A2FEA54F0111CA2CBB /* Other Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "Other Frameworks";
+			sourceTree = "<group>";
+		};
+		19C28FACFE9D520D11CA2CBB /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1D6058910D05DD3D006BFB54 /* iphone_trds.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		29B97314FDCFA39411CA2CEA /* CustomTemplate */ = {
+			isa = PBXGroup;
+			children = (
+				080E96DDFE201D6D7F000001 /* Classes */,
+				29B97315FDCFA39411CA2CEA /* Other Sources */,
+				29B97317FDCFA39411CA2CEA /* Resources */,
+				29B97323FDCFA39411CA2CEA /* Frameworks */,
+				19C28FACFE9D520D11CA2CBB /* Products */,
+			);
+			name = CustomTemplate;
+			sourceTree = "<group>";
+		};
+		29B97315FDCFA39411CA2CEA /* Other Sources */ = {
+			isa = PBXGroup;
+			children = (
+				C483D5EA0E9BAD9000C30D8C /* retrorocket.cpp */,
+				C483D5EB0E9BAD9000C30D8C /* retrorocket.h */,
+				C483D5EC0E9BAD9000C30D8C /* sob.cpp */,
+				C483D5ED0E9BAD9000C30D8C /* sob.h */,
+				C483D61F0E9BB0C200C30D8C /* system_iphone.cpp */,
+				C483D5EE0E9BAD9000C30D8C /* system.h */,
+				C483D5EF0E9BAD9000C30D8C /* utils.cpp */,
+				C483D5F00E9BAD9000C30D8C /* utils.h */,
+				C483D5F10E9BAD9000C30D8C /* weapon.cpp */,
+				C483D5F20E9BAD9000C30D8C /* weapon.h */,
+				C483D5F30E9BAD9000C30D8C /* player.cpp */,
+				C483D5F40E9BAD9000C30D8C /* player.h */,
+				C483D5F50E9BAD9000C30D8C /* network.cpp */,
+				C483D5F60E9BAD9000C30D8C /* network.h */,
+				C483D5F70E9BAD9000C30D8C /* mob.h */,
+				C483D5F80E9BAD9000C30D8C /* mob.cpp */,
+				C483D5F90E9BAD9000C30D8C /* ball.h */,
+				C483D5FA0E9BAD9000C30D8C /* ball.cpp */,
+				C483D5FB0E9BAD9000C30D8C /* menu.cpp */,
+				C483D5FC0E9BAD9000C30D8C /* menu.h */,
+				32CA4F630368D1EE00C91783 /* iphone_trds_Prefix.pch */,
+				29B97316FDCFA39411CA2CEA /* main.m */,
+			);
+			name = "Other Sources";
+			sourceTree = "<group>";
+		};
+		29B97317FDCFA39411CA2CEA /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				8D1107310486CEB800E47090 /* Info.plist */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		29B97323FDCFA39411CA2CEA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				1058C7A0FEA54F0111CA2CBB /* Linked Frameworks */,
+				1058C7A2FEA54F0111CA2CBB /* Other Frameworks */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1D6058900D05DD3D006BFB54 /* iphone_trds */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1D6058960D05DD3E006BFB54 /* Build configuration list for PBXNativeTarget "iphone_trds" */;
+			buildPhases = (
+				1D60588D0D05DD3D006BFB54 /* Resources */,
+				1D60588E0D05DD3D006BFB54 /* Sources */,
+				1D60588F0D05DD3D006BFB54 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iphone_trds;
+			productName = iphone_trds;
+			productReference = 1D6058910D05DD3D006BFB54 /* iphone_trds.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		29B97313FDCFA39411CA2CEA /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = C01FCF4E08A954540054247B /* Build configuration list for PBXProject "iphone_trds" */;
+			compatibilityVersion = "Xcode 3.1";
+			hasScannedForEncodings = 1;
+			mainGroup = 29B97314FDCFA39411CA2CEA /* CustomTemplate */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1D6058900D05DD3D006BFB54 /* iphone_trds */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1D60588D0D05DD3D006BFB54 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1D60588E0D05DD3D006BFB54 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D60589B0D05DD56006BFB54 /* main.m in Sources */,
+				1D3623260D0F684500981E51 /* iphone_trdsAppDelegate.mm in Sources */,
+				289E37760D53116900ACCF19 /* MyView.mm in Sources */,
+				C483D5FD0E9BAD9000C30D8C /* retrorocket.cpp in Sources */,
+				C483D5FE0E9BAD9000C30D8C /* sob.cpp in Sources */,
+				C483D5FF0E9BAD9000C30D8C /* utils.cpp in Sources */,
+				C483D6000E9BAD9000C30D8C /* weapon.cpp in Sources */,
+				C483D6010E9BAD9000C30D8C /* player.cpp in Sources */,
+				C483D6020E9BAD9000C30D8C /* network.cpp in Sources */,
+				C483D6030E9BAD9000C30D8C /* mob.cpp in Sources */,
+				C483D6040E9BAD9000C30D8C /* ball.cpp in Sources */,
+				C483D6050E9BAD9000C30D8C /* menu.cpp in Sources */,
+				C483D6200E9BB0C200C30D8C /* system_iphone.cpp in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1D6058940D05DD3E006BFB54 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = iphone_trds_Prefix.pch;
+				INFOPLIST_FILE = Info.plist;
+				PREBINDING = NO;
+				PRODUCT_NAME = iphone_trds;
+			};
+			name = Debug;
+		};
+		1D6058950D05DD3E006BFB54 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = iphone_trds_Prefix.pch;
+				INFOPLIST_FILE = Info.plist;
+				PREBINDING = NO;
+				PRODUCT_NAME = iphone_trds;
+				WRAPPER_EXTENSION = app;
+			};
+			name = Release;
+		};
+		C01FCF4F08A954540054247B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				"CODE_SIGN_IDENTITY[sdk=aspen*]" = "iPhone Developer";
+				GCC_C_LANGUAGE_STANDARD = c99;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				HEADER_SEARCH_PATHS = (
+					/usr/include,
+					/usr/include/malloc,
+				);
+				ONLY_ACTIVE_ARCH = YES;
+				PREBINDING = NO;
+				SDKROOT = aspen1.2;
+			};
+			name = Debug;
+		};
+		C01FCF5008A954540054247B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				PREBINDING = NO;
+				SDKROOT = aspen1.2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1D6058960D05DD3E006BFB54 /* Build configuration list for PBXNativeTarget "iphone_trds" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D6058940D05DD3E006BFB54 /* Debug */,
+				1D6058950D05DD3E006BFB54 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C01FCF4E08A954540054247B /* Build configuration list for PBXProject "iphone_trds" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C01FCF4F08A954540054247B /* Debug */,
+				C01FCF5008A954540054247B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 29B97313FDCFA39411CA2CEA /* Project object */;
+}

@@ -1,0 +1,11 @@
+########
+# Ball #
+########
+
+drag 0.2
+mass 1000
+strength 1
+damage 1
+
+sprite money_Sprite.bin
+palette money_Pal.bin

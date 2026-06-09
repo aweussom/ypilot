@@ -1,0 +1,32 @@
+##################
+# Thrust level 4 #
+##################
+
+width 656
+height 1024
+
+info thrust4/thrust4_Info.bin 
+
+background thrust4/thrust4_Tiles.bin thrust4/thrust4_Map.bin thrust4/thrust4_Pal.bin
+
+collision thrust4/thrust4_col_Tiles.bin thrust4/thrust4_col_Map.bin 
+
+ball 312 792 thrust.ball
+buttonleft 424 544
+buttonleft 424 640
+door 368 584 432 608
+fuel 320 552
+gunne 176 536
+gunne 96 392
+gunnw 376 744
+gunse 184 312
+gunse 280 664
+gunse 96 432
+gunsw 200 448
+powerplant 96 504
+start 184 200
+start 152 424
+start 384 504
+start 344 680
+
+score 3200

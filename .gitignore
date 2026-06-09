@@ -1,9 +1,6 @@
 # Lokal Phaser-referanse (kildekode + docs + migrerings-skill) — kun for oppslag, ikke i repo
 vendor/
 
-# RetroRocket-kilde/binaerer (NDS-homebrew vi rendrer kart fra) — kun lokalt oppslag
-retrorocket/
-
 # OS-skrot
 .DS_Store
 Thumbs.db

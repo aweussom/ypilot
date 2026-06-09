@@ -1,0 +1,92 @@
+autofire_rate 4
+background_damage 100
+ball_score 0
+bitmap easy_BM.bin 0
+buck
+buckshot_armtime 45
+buckshot_spread_speed 0.1
+bullet_speed 4
+doortime 480
+doublegun
+empty_gas_die_time 600
+end_time 200
+fuel_destroy_score 150
+fuel_fill_score 300
+fuel_sob_capacity 300
+fuel_strength 80
+gas_mass 0
+gas_refill_rate 5
+gravity 0.015
+gun_score 750
+gun_strength 80
+gunstation_damage 1
+gunstation_rate 200
+gunstation_reaction_distance 120
+heatseeker_accel 0.1
+heatseeker_armtime 50
+heatseeker_lifetime 200
+height 296
+immortal_time 0
+introtext Mission: Kill your opponent.
+introtext 
+introtext To access the game menu, land
+introtext on your home platform and
+introtext press the menu button.
+liquid_drag 0.93
+lives 5
+maxplayers 3
+mine
+mine_lifetime 1200
+minplayers 2
+mono
+oneshot_damage 100
+outer_space 16
+particle_damage 0
+particle_drag 1000
+particle_mass 1
+platform 72 264 40 h 0 s
+platform 384 264 40 h 1 s
+platform 232 264 40 h 2 s
+platform_friction 0.005
+platform_strength -1
+powerplant_inactive_time 300
+powerplant_strength 80
+required_balls 7
+resurrect_time 200
+roundsa 250
+roundsb 8
+seek_radius 200
+seeker
+ship_bitmap easy_ship_BM.bin
+ship_damage 100
+ship_drag 0.08
+ship_gas 4200
+ship_gas_usage_rate 1
+ship_mass 1000
+ship_price 20
+ship_rotspeed 8.15
+ship_strength 100
+ship_thrust 80
+single
+singleshot_armtime 100
+spraygun
+spraystream_spread 0.3
+star_spread_speed 1
+streamgun
+strength_refill_rate 1
+strut_length 40
+tileset eko2_tiles/eko2_tiles1_Tiles.bin eko2_tiles/eko2_tiles1_Pal.bin
+tileset eko2_tiles/eko2_tiles2_Tiles.bin eko2_tiles/eko2_tiles2_Pal.bin
+tileset eko2_tiles/eko2_tiles3_Tiles.bin eko2_tiles/eko2_tiles3_Pal.bin
+tileset eko2_tiles/eko2_tiles4_Tiles.bin eko2_tiles/eko2_tiles4_Pal.bin
+tileset eko2_tiles/eko2_tiles5_Tiles.bin eko2_tiles/eko2_tiles5_Pal.bin
+tileset eko2_tiles/eko2_tiles6_Tiles.bin eko2_tiles/eko2_tiles6_Pal.bin
+tileset eko2_tiles/eko2_tiles7_Tiles.bin eko2_tiles/eko2_tiles7_Pal.bin
+tileset eko2_tiles/eko2_tiles8_Tiles.bin eko2_tiles/eko2_tiles8_Pal.bin
+tripplegun
+weapon_a_mass 1
+weapon_a_refill_rate 4
+weapon_b_mass 0
+weapon_b_max_repetition_rate 1
+weapon_b_refill_rate 50
+width 512

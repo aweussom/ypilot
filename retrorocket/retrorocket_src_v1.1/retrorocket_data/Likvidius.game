@@ -1,0 +1,36 @@
+###################
+# Likvidius field #
+###################
+
+include tr_gameparams.inc
+include tr_introtext.inc
+
+width 800
+height 512
+
+info likvidius/likvidius_Info.bin 
+
+# tiles map palette
+foreground likvidius/likvidius_Tiles.bin likvidius/likvidius_Map.bin likvidius/likvidius_Pal.bin
+
+# tiles map
+collision likvidius/likvidius_col_Tiles.bin likvidius/likvidius_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 146 208 64 h 0
+platform 571 202 64 h 1
+platform 168 484 45 g
+
+# zone x, y, width, height, force x, force y, flags
+# Flags:
+#   g : gravity field
+#   l : liquid
+
+zone 413 417 169 87 0 -0.016 l

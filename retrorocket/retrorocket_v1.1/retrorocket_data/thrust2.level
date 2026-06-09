@@ -1,0 +1,22 @@
+##################
+# Thrust level 2 #
+##################
+
+width 656
+height 720
+
+info thrust2/thrust2_Info.bin 
+
+background thrust2/thrust2_Tiles.bin thrust2/thrust2_Map.bin thrust2/thrust2_Pal.bin
+
+collision thrust2/thrust2_col_Tiles.bin thrust2/thrust2_col_Map.bin 
+
+start 72 176
+start 160 424
+ball 128 480 thrust.ball
+fuel 176 488
+gunse 80 424
+gunsw 240 400
+powerplant 16 216
+
+score 2400

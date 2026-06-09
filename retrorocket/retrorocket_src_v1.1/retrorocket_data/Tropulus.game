@@ -1,0 +1,42 @@
+##################
+# Tropulus field #
+##################
+
+minplayers 1
+include tr_gameparams.inc
+include tr_introtext_lap.inc
+
+width 448
+height 390
+
+info tropulus/tropulus_Info.bin 
+
+# tiles map palette
+foreground tropulus/tropulus_Tiles.bin tropulus/tropulus_Map.bin tropulus/tropulus_Pal.bin
+
+# tiles map
+collision tropulus/tropulus_col_Tiles.bin tropulus/tropulus_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 50 359 41 h 0
+platform 352 87 41 h 1
+platform 291 367 37
+
+# waypoint x, y, length, flags...
+# first is start, last is goal
+# Flags:
+#   h       : horizontal waypoint line
+#   v       : vertical waypoint line
+#   u/d/l/r : only when passing up/down/left/right-wards
+
+waypoint 205 260 119 v #start
+waypoint 239 18 90 v r
+waypoint 239 260 119 v #goal
+

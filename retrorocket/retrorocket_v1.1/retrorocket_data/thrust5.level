@@ -1,0 +1,46 @@
+##################
+# Thrust level 5 #
+##################
+
+width 656
+height 1344
+
+info thrust5/thrust5_Info.bin 
+
+background thrust5/thrust5_Tiles.bin thrust5/thrust5_Map.bin thrust5/thrust5_Pal.bin
+
+collision thrust5/thrust5_col_Tiles.bin thrust5/thrust5_col_Map.bin 
+
+start 184 200
+start 224 504
+start 72 664
+start 256 888
+start 360 1056
+
+ball 368 1112 thrust.ball
+
+buttonleft 376 928
+buttonright 328 1064
+
+fuel 136 632
+fuel 136 872
+fuel 160 872
+fuel 208 288
+fuel 264 952
+fuel 288 952
+fuel 336 448
+fuel 360 448
+
+gunne 216 944
+gunne 96 864
+gunnw 256 624
+gunse 176 400
+gunsw 280 856
+gunsw 368 400
+gunsw 408 1040
+
+powerplant 288 440
+
+door 328 976 384 1008
+
+score 3600

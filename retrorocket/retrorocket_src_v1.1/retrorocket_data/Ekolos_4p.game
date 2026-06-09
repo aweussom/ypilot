@@ -1,0 +1,40 @@
+#########################
+# Ekolos 4-player field #
+#########################
+
+minplayers 2
+maxplayers 4
+include tr_gameparams.inc
+include tr_introtext.inc
+
+width 640
+height 640
+
+info ekolos4p/ekolos4p_Info.bin 
+
+# tiles map palette
+foreground ekolos4p/ekolos4p_Tiles.bin ekolos4p/ekolos4p_Map.bin ekolos4p/ekolos4p_Pal.bin
+
+# tiles map
+collision ekolos4p/ekolos4p_col_Tiles.bin ekolos4p/ekolos4p_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 264 207 44 h 0
+platform 320 445 44 h 1
+platform 480  73 44 h 2
+platform 156 390 44 h 3
+
+# zone x, y, width, height, force x, force y, flags
+# Flags:
+#   g : gravity field
+#   l : liquid
+
+zone 31 148 43 188 0 -0.02 g
+

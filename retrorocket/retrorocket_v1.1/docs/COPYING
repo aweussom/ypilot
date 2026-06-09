@@ -1,0 +1,26 @@
+All the source code of RetroRocket is released under the terms of the
+GNU General Public License version 3, as published by the Free
+Software Foundation.  See the file gpl.txt for the full license text
+or visit <http://www.gnu.org/licenses/>
+
+The game music (Cruising in Space) is released under the terms of the
+Creative Commons by-nc-nd license.  See the file cc_by-nc-nd.txt for
+the full license or visit <http://creativecommons.org/>
+
+Game graphics for the original TurboRaketti games and the original
+TurboRaketti sounds are taken directly from the original TurboRaketti
+II game which was released as freeware by Heikki Kosola in 1998.
+
+Game graphics for the original Thrust levels are loosely based on the
+graphics from the GPL thrust for Linux.
+
+The binary file (retrorocket.nds) is linked against the following
+libraries: 
+ - libfat
+ - libnds
+ - mikmod (LGPL)
+ - liblobby (unknown license)
+ - PAlib
+
+For all other files, the GPL V3 applies.
+

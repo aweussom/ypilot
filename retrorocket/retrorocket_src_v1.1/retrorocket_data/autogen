@@ -1,0 +1,19 @@
+##################
+# autogen fields #
+##################
+
+include tr_gameparams.inc
+include tr_introtext.inc
+
+platform_strength            -1
+
+#tileset basic_tiles_Tiles.bin basic_tiles_Pal.bin
+tileset eko2_tiles/eko2_tiles1_Tiles.bin eko2_tiles/eko2_tiles1_Pal.bin
+tileset eko2_tiles/eko2_tiles2_Tiles.bin eko2_tiles/eko2_tiles2_Pal.bin
+tileset eko2_tiles/eko2_tiles3_Tiles.bin eko2_tiles/eko2_tiles3_Pal.bin
+tileset eko2_tiles/eko2_tiles4_Tiles.bin eko2_tiles/eko2_tiles4_Pal.bin
+tileset eko2_tiles/eko2_tiles5_Tiles.bin eko2_tiles/eko2_tiles5_Pal.bin
+tileset eko2_tiles/eko2_tiles6_Tiles.bin eko2_tiles/eko2_tiles6_Pal.bin
+tileset eko2_tiles/eko2_tiles7_Tiles.bin eko2_tiles/eko2_tiles7_Pal.bin
+tileset eko2_tiles/eko2_tiles8_Tiles.bin eko2_tiles/eko2_tiles8_Pal.bin
+

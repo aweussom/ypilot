@@ -1,0 +1,75 @@
+#############
+# RTS field #
+#############
+
+minplayers 2
+
+include rts_params.inc
+include tr_gameparams.inc
+
+width 2048
+height 1024
+
+tileset eko2_tiles/eko2_tiles1_Tiles.bin eko2_tiles/eko2_tiles1_Pal.bin
+tileset eko2_tiles/eko2_tiles2_Tiles.bin eko2_tiles/eko2_tiles2_Pal.bin
+tileset eko2_tiles/eko2_tiles3_Tiles.bin eko2_tiles/eko2_tiles3_Pal.bin
+tileset eko2_tiles/eko2_tiles4_Tiles.bin eko2_tiles/eko2_tiles4_Pal.bin
+tileset eko2_tiles/eko2_tiles5_Tiles.bin eko2_tiles/eko2_tiles5_Pal.bin
+tileset eko2_tiles/eko2_tiles6_Tiles.bin eko2_tiles/eko2_tiles6_Pal.bin
+tileset eko2_tiles/eko2_tiles7_Tiles.bin eko2_tiles/eko2_tiles7_Pal.bin
+tileset eko2_tiles/eko2_tiles8_Tiles.bin eko2_tiles/eko2_tiles8_Pal.bin
+bitmap rts1/rts1_BM.bin 0
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+#   s   : create platform SOB
+
+platform 544 864 64 h 0 s
+platform 1440 864 64 h 1 s
+
+#resource 184 976
+#resource 1856 976
+#resource 264 208
+#resource 1776 208
+#resource 640 504
+#resource 1400 504
+#resource 920 960
+#resource 1120 960
+#resource 976 976
+#resource 1064 976
+
+resource 184 968
+resource 1856 968
+resource 264 200
+resource 1776 200
+resource 640 496
+resource 1400 496
+resource 920 952
+resource 1120 952
+resource 976 968
+resource 1064 968
+
+introtext Mission: Destroy the home
+introtext platform of your opponent.
+introtext 
+introtext To access the game menu, land
+introtext on your home platform and
+introtext press the menu button.
+introtext 
+introtext Buy weapons, ammo etc. from
+introtext the game menu.  Powerful
+introtext weapons must be bought to
+introtext conquer your opponent.
+introtext 
+introtext Earn credits needed for
+introtext shopping by mining resources.
+introtext Mining is performed by buying
+introtext the "node" weapon and
+introtext "shooting" a node on the
+introtext resource.
+

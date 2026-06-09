@@ -1,0 +1,17 @@
+###############
+# Thrust Ship #
+###############
+
+ship_drag 0.2
+ship_mass 1000
+
+ship_rotspeed 8.15
+ship_thrust 70
+ship_strength 1
+lives 3
+ship_gas 1000
+ship_gas_usage_rate 0.16
+roundsb 999
+ship_damage 1
+
+ship_bitmap thrustship/thrustship_BM.bin

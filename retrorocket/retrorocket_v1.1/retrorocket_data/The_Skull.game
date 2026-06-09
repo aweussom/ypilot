@@ -1,0 +1,94 @@
+###############
+# Skull field #
+###############
+
+minplayers 2
+maxplayers 4
+
+include rts_params.inc
+include tr_gameparams.inc
+
+width 1024
+height 1024
+
+#bitmap tmp_BM.bin 0
+#tileset eko2_tiles/eko2_tiles1_Tiles.bin eko2_tiles/eko2_tiles1_Pal.bin
+#tileset eko2_tiles/eko2_tiles2_Tiles.bin eko2_tiles/eko2_tiles2_Pal.bin
+#tileset eko2_tiles/eko2_tiles3_Tiles.bin eko2_tiles/eko2_tiles3_Pal.bin
+#tileset eko2_tiles/eko2_tiles4_Tiles.bin eko2_tiles/eko2_tiles4_Pal.bin
+#tileset eko2_tiles/eko2_tiles5_Tiles.bin eko2_tiles/eko2_tiles5_Pal.bin
+#tileset eko2_tiles/eko2_tiles6_Tiles.bin eko2_tiles/eko2_tiles6_Pal.bin
+#tileset eko2_tiles/eko2_tiles7_Tiles.bin eko2_tiles/eko2_tiles7_Pal.bin
+#tileset eko2_tiles/eko2_tiles8_Tiles.bin eko2_tiles/eko2_tiles8_Pal.bin
+
+info skull/skull_Info.bin
+
+# tiles map palette
+background skull/skull_Tiles.bin skull/skull_Map.bin skull/skull_Pal.bin
+
+# tiles map
+collision skull/skull_col_Tiles.bin skull/skull_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+#   s   : create platform SOB
+
+platform 72 240 40 h 0 s
+platform 952 896 40 h 1 s
+platform 16 888 40 h 2 s
+platform 896 240 40 h 3 s
+
+platform 488 784 40 g a b r s
+platform 488 944 40 g a s
+
+resource 368 416
+resource 616 416
+resource 448 784
+resource 560 784
+resource 152 992
+resource 856 992
+resource 952 232
+resource 24 216
+resource 152 248
+resource 864 248
+resource 1000 872
+resource 80 904
+
+# waypoint x, y, length, flags...
+# first is start, last is goal
+# Flags:
+#   h       : horizontal waypoint line
+#   v       : vertical waypoint line
+#   u/d/l/r : only when passing up/down/left/right-wards
+
+waypoint 480 800 120 v l #start
+waypoint 200 480 160 h u
+waypoint 680 480 120 h d 
+waypoint 520 800 120 v l #goal
+
+lap_credits 10
+
+introtext Mission: Destroy the home
+introtext platform of your opponent.
+introtext 
+introtext To access the game menu, land
+introtext on your home platform and
+introtext press the menu button.
+introtext 
+introtext Buy weapons, ammo etc. from
+introtext the game menu.  Powerful
+introtext weapons must be bought to
+introtext conquer your opponent.
+introtext 
+introtext Earn credits needed for
+introtext shopping by mining resources.
+introtext Mining is performed by buying
+introtext the "node" weapon and
+introtext "shooting" a node on the
+introtext resource.
+

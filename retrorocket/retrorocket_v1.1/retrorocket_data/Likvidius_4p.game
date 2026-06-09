@@ -1,0 +1,40 @@
+###################
+# Likvidius field #
+###################
+
+minplayers 2
+maxplayers 4
+include tr_gameparams.inc
+include tr_introtext.inc
+
+width 800
+height 512
+
+info likvidius4p/likvidius4p_Info.bin 
+
+# tiles map palette
+foreground likvidius4p/likvidius4p_Tiles.bin likvidius4p/likvidius4p_Map.bin likvidius4p/likvidius4p_Pal.bin
+
+# tiles map
+collision likvidius4p/likvidius4p_col_Tiles.bin likvidius4p/likvidius4p_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 146 208 64 h 0
+platform 571 202 64 h 1
+platform 725 478 62 h 2
+platform  22 476 65 h 3
+platform 168 484 45 g
+
+# zone x, y, width, height, force x, force y, flags
+# Flags:
+#   g : gravity field
+#   l : liquid
+
+zone 413 417 169 87 0 -0.016 l

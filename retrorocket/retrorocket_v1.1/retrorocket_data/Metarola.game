@@ -1,0 +1,50 @@
+##################
+# Metarola field #
+##################
+
+minplayers 1
+include tr_gameparams.inc
+include tr_introtext_lap.inc
+
+width 640
+height 640
+
+info metarola/metarola_Info.bin 
+
+# tiles map palette
+foreground metarola/metarola_Tiles.bin metarola/metarola_Map.bin metarola/metarola_Pal.bin
+
+# tiles map
+collision metarola/metarola_col_Tiles.bin metarola/metarola_col_Map.bin 
+
+# platform x, y, width, flags...
+# Flags:
+#   h x : home for player x
+#   g   : filling station
+#   a   : weapon a shop
+#   b   : weapon b shop
+#   r   : garage (repair)
+
+platform 169 171 50 h 0
+platform 134 435 50 h 1
+platform 429 187 103 r a b g 
+platform 429 508 103 r a b g
+
+# waypoint x, y, length, flags...
+# first is start, last is goal
+# Flags:
+#   h       : horizontal waypoint line
+#   v       : vertical waypoint line
+#   u/d/l/r : only when passing up/down/left/right-wards
+
+waypoint 455 230  72 v #start
+waypoint  30 230 140 h u
+waypoint 215  20 170 v r
+waypoint 175 505 120 v l
+waypoint  15 465 120 h u
+waypoint 555 480  70 h d
+waypoint 490 550  75 v l
+waypoint 430  20  90 v r
+waypoint 555 165  75 h d
+waypoint 509 228  72 v #goal
+

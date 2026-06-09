@@ -1,0 +1,66 @@
+minplayers 2
+maxplayers 2
+
+# Thrust-spesific
+include thrust_duel.ship
+ball_score 1000
+beam_range 50
+fuel_destroy_score 150
+fuel_fill_score 300
+fuel_sob_capacity 300
+fuel_strength 80
+required_balls 7
+gun_score 750
+gun_strength 200
+gunstation_damage 1
+gunstation_rate 200
+gunstation_reaction_distance 120
+lives 99
+outer_space 16
+powerplant_inactive_time 300
+powerplant_strength 80
+platform_strength -1
+sentry_damage 100
+strut_length 40
+gravity 0.015
+
+include tr_gameparams.inc
+
+introtext Mission: Bring as many balls
+introtext to outer space as possible.
+introtext 
+introtext To collect the ball: hover
+introtext just above the ball, press and
+introtext hold the beam button and
+introtext thrust away from the ball.
+introtext
+introtext You may also collect several
+introtext balls at once, resulting in
+introtext higher score.
+introtext
+introtext To access the game menu, land
+introtext on your home platform and
+introtext press the menu button.
+
+width 512
+height 1024
+
+tileset basic_tiles_Tiles.bin basic_tiles_Pal.bin
+bitmap thrust_duel_BM.bin 0
+
+platform 40 320 40 h 0 s
+platform 424 320 40 h 1 s
+
+ball 104 336 thrust.ball
+ball 72 552 thrust.ball
+ball 104 760 thrust.ball
+ball 392 336 thrust.ball
+ball 424 552 thrust.ball
+ball 384 760 thrust.ball
+ball 248 944 thrust.ball
+
+fuel 152 448
+fuel 344 448
+
+powerplant 248 720
+

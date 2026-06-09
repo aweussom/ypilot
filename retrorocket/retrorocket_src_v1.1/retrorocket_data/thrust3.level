@@ -1,0 +1,31 @@
+##################
+# Thrust level 3 #
+##################
+
+width 656
+height 992
+
+info thrust3/thrust3_Info.bin 
+
+background thrust3/thrust3_Tiles.bin thrust3/thrust3_Map.bin thrust3/thrust3_Pal.bin
+
+collision thrust3/thrust3_col_Tiles.bin thrust3/thrust3_col_Map.bin 
+
+ball 216 760 thrust.ball
+fuel 328 640
+fuel 408 216
+fuel 416 560
+fuel 520 432
+fuel 544 432
+fuel 568 432
+gunnw 272 656
+gunnw 592 432
+gunse 152 600
+gunse 264 520
+gunse 432 392
+powerplant 576 248
+start 376 176
+start 464 424
+start 192 672
+
+score 2800

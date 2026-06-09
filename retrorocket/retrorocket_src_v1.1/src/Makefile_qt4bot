@@ -1,0 +1,68 @@
+###############################################################################
+#
+# Makefile for RetroRocket, qt4 debug verion
+#
+###############################################################################
+
+AS = as
+CC = gcc
+CPP = g++
+LD = g++
+os-type := $(shell uname)
+
+SVNDEF = -D'SVNREV="$(shell svnversion -n .)"'
+
+CFLAGS = -pg -Wall -g -fno-strict-aliasing  -I/usr/include/qt4/Qt -I/usr/include/qt4/QtCore \
+        -I/usr/include/qt4/QtGui -I/usr/include/qt4/QtNetwork -I/usr/include/qt4 $(SVNDEF) \
+       -I/Library/Frameworks/QtGui.framework/Headers -I/Library/Frameworks/QtCore.framework/Headers \
+       -I/usr/include/malloc
+
+LDFLAGS = -g -pg
+LIBS = -lQtGui
+ifeq ($(os-type), Darwin)
+ LIBS = -framework QtGui -framework QtNetwork -framework QtCore
+endif
+OBJECTS = \
+	retrorocket.o mob.o sob.o field.o weapon.o utils.o network.o menu.o \
+        system_qt4bot.o config.o ball.o worldgen.o moc.o player.o bot.o botrocket.o
+
+HEADERS = $(wildcard *.h)
+
+###############################################################################
+
+define bin2o
+	bin2s $< | $(AS) -o $(@)
+	echo "extern const u8" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"_end[];" > `(echo $(<F) | tr . _)`.h
+	echo "extern const u8" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`"[];" >> `(echo $(<F) | tr . _)`.h
+	echo "extern const u32" `(echo $(<F) | sed -e 's/^\([0-9]\)/_\1/' | tr . _)`_size";" >> `(echo $(<F) | tr . _)`.h
+endef
+
+###############################################################################
+
+botrocket : $(OBJECTS)
+	$(LD) $(LDFLAGS) $+ $(LIBS) -o $@
+
+retrorocket.o : retrorocket.cpp $(HEADERS)
+	$(CPP) $(CFLAGS) -c $< -o $@
+
+%.o : %.cpp $(HEADERS)
+	$(CPP) $(CFLAGS) -c $< -o $@
+
+moc.o : moc.cpp
+	$(CPP) $(CFLAGS) -c $< -o $@
+ifeq ($(os-type), Darwin)
+moc.cpp : system_qt4.h $(HEADERS)
+	moc $< -o $@
+endif 
+ifeq ($(os-type), Linux)
+moc.cpp : system_qt4.h $(HEADERS)
+	moc-qt4 $< -o $@
+endif
+
+###############################################################################
+
+.PHONY : clean
+clean :
+	rm -rf moc.cpp *.o *.elf *.arm9 *.nds *ds.gba *bin.h binfiles/*.o
+
+###############################################################################
