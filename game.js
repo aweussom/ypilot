@@ -14,10 +14,10 @@
  * ═══════════════════════════════════════════════════════════════════════════ */
 const PHYSICS = {
   // — Bevegelse —
-  thrustForce:  0.45,   // akselerasjon per frame ved full gass (må overgå gravitasjonen
-                        //   så skip kan klatre; gravitasjons-default 0.25–0.35, tak 0.50)
+  thrustForce:  0.40,   // akselerasjon per frame ved full gass (rikelig over gravitasjons-taket
+                        //   0.10 så skip klatrer lett; verdien styrer mest aksel-følelsen)
   turnRate:     0.065,  // rad per frame
-  maxSpeed:     12,     // px/frame — hardt sikkerhetstak (clamp)
+  maxSpeed:     8,      // px/frame — hardt sikkerhetstak (clamp)
   drag:         0.99,   // hastighet beholdt per frame (<1 = drag → terminal-fart; 1 = vakuum)
   // — Skyting —
   bulletSpeed:  14,     // px/frame
@@ -43,7 +43,10 @@ const PHYSICS = {
   exhaustOffset: 12,    // px bak senteret
   // — Drivstoff —
   fuelMax:      100,    // full tank
-  fuelThrust:   0.18,   // drivstoff/frame ved gass
+  fuelThrust:   0.18,   // drivstoff/frame ved gass (skaleres NED på store kart, se fuelMapRef)
+  fuelMapRef:   48,     // tiles — kart ≤ denne dim. bruker full fuelThrust; større kart skalerer
+                        //   drivstoff-bruk fra rakett lineært ned (mer å fly over → billigere gass)
+  fuelMapMin:   0.20,   // gulv for skaleringen (svært store kart: ned mot 20 % bruk per thrust)
   fuelShot:     2,      // drivstoff per skudd
   fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
   // — Skjold —
@@ -117,7 +120,8 @@ const LAND_MARGIN = 12;           // px senteret hviler over vegg-toppen
  * per-kart-gravitasjon fra `.map`-headeren sette default-verdien her.
  * ------------------------------------------------------------------------- */
 const GRAVITY_KEY = 'jpilot.gravity';
-const GRAVITY_MAX = 0.50;   // absolutt tak — over dette er uaktuelt
+const GRAVITY_MAX = 0.10;   // absolutt tak — over ~0.10 er spillet uspillbart (faller for fort
+                            //   til å manøvrere). Slider og per-kart-header klippes til dette.
 let GRAVITY = 0;
 
 // Tuning-invariant (IKKE hard-klampet her): gravitasjonen bør aldri være høyere enn
@@ -324,6 +328,16 @@ function tileAt(map, px, py) {
   const r = Math.floor(py / map.blockSize);
   if (r < 0 || r >= map.rows || c < 0 || c >= map.cols) return ' ';
   return map.tiles[r][c];
+}
+
+// Drivstoff-skalering for rakettbruk: store kart krever mye thrust for å fly over, så
+// drivstoff-forbruket per gass skaleres lineært ned med kart-størrelsen (cachet på map).
+function fuelMapScale(map) {
+  if (map._fuelScale === undefined) {
+    const dim = Math.max(map.cols, map.rows);
+    map._fuelScale = Math.max(PHYSICS.fuelMapMin, Math.min(1, PHYSICS.fuelMapRef / dim));
+  }
+  return map._fuelScale;
 }
 
 // Wrap et display-objekt rundt kartgrensene.
@@ -890,7 +904,7 @@ class Ship {
     if (thrusting) {
       this.vx += Math.cos(this.angle) * PHYSICS.thrustForce * dtScale;
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
-      this.fuel -= PHYSICS.fuelThrust * dtScale;
+      this.fuel -= PHYSICS.fuelThrust * fuelMapScale(this.scene.map) * dtScale;
     }
 
     // Global gravitasjon (nedover) — AV mens spawn-usårbarheten varer, så man ikke

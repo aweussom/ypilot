@@ -121,11 +121,12 @@ Graphics for wireframes, partikkel-emittere for eksos, scener for spill/meny/HUD
 ### Gravitasjon (Fase 1)
 
 Global gravitasjon (nedover) er en **justerbar DOM-slider** (`#grav`), område
-0–0.50, persistert i localStorage (`jpilot.gravity`; `clampGravity()` i `game.js`),
+0–0.10, persistert i localStorage (`jpilot.gravity`; `clampGravity()` i `game.js`),
 anvendt i `Ship.update`. **Invariant:** gravitasjonen må aldri overstige det
-rakettstrålen kan bremse skipet med — balanseres senere via gravitasjon og/eller
-strålestyrke (absolutt tak 0.50). Per-kart-gravitasjon (Fase 2) setter default.
-Innstillinger kan senere synkes til Google (gjenbruk `..\tabtabtab\`).
+rakettstrålen kan bremse skipet med. Praktisk tak er senket til **0.10** — over det
+faller skipet for fort til å manøvrere (uspillbart), selv om `thrustForce` (0.40)
+fysisk overgår det. `thrustForce` styrer derfor mest aksel-følelsen. Per-kart-gravitasjon
+(Fase 2) setter default. Innstillinger kan senere synkes til Google (gjenbruk `..\tabtabtab\`).
 
 ### Lyd — Web Audio API direkte (Fase 2)
 

@@ -427,7 +427,7 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
 4. Vegg-kollisjon (grid-basert, instant death — ingen shield ennå) ✅
 5. Jeteksos-partikler med ADD blending ✅
 6. Score-display ✅
-7. Justerbar gravitasjon (slider 0–0.50, persistert i localStorage) ✅
+7. Justerbar gravitasjon (slider 0–0.10, persistert i localStorage) ✅
 
 ## Fase 2 — XPilot-komplett
 
@@ -440,6 +440,16 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
   (utnytt at en kraftig LLM kan «se» kartgeometrien bedre enn de fleste). Dette er
   i praksis **LLM-«enriching»** av kartdata (mønster brukeren bruker mye — stjel
   fra `..\tabtabtab\` og `C:\devel\q-free\geomap-united-nations\sweden\llm-benchmark`).
+  - **Heuristisk basis (gjort, «target practice»-nivå):** prediktiv sikting,
+    skjold-refleks mot vegg, gravitasjons-kompensasjon (hovrer mot tyngdekraften).
+    LLM-enriching legges *oppå* dette — botene flyr ikke lenger blindt, men kan
+    manøvrere/posisjonere som et menneske (og etter hvert bruke rakettstrålen som
+    dytt/våpen, jf. Fase 3).
+  - **«Finn et godt sted å spawne»:** la LLM-enrichingen analysere kartgeometrien
+    og sikre at hvert spawn-punkt har en **landing (flat vegg-topp) rett under seg**
+    der det er mulig — så skip starter hvilende på en plattform og letter bevisst
+    (Thrust/Lunar Lander-følelse) i stedet for å scramble i fritt fall når
+    gravitasjonen slår inn. Gjelder særlig gravitasjons-kart.
 - **Kart-navigator:** velger med terningkast-rating (1–6), score-sortering
   (terningkast 1 under uvurderte) og kart-preview (thumbnail av tile-gridet).
 - Shield-mekanikk (energi, refleksjon, skjold-bounce-quirk — se Følelses-quirks).
