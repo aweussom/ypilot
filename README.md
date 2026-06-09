@@ -1,9 +1,13 @@
-# jpilot
+# YPilot
+
+*Because Y comes after X.*
 
 XPilot reimagined in the browser. Phaser 4 + WebGL, neon-wireframe aesthetic,
-local same-keyboard multiplayer, and support for the original XPilot `.map`
-format. A homage to the XPilot crew from the University of Tromsø and to the
-Finnish author of Turboraketti.
+local multiplayer with AI bots, shields, fuel, and support for the original
+XPilot `.map` format. A homage to the XPilot crew from the University of Tromsø
+and to the Finnish author of Turboraketti.
+
+**Play online:** https://aweussom.github.io/ypilot/
 
 No build step, no dependencies — open `index.html` and play.
 
@@ -22,7 +26,7 @@ python -m http.server 8000
 
 …og åpne `http://localhost:8000`.
 
-## Kontroller (Fase 1 — lokal 2-spiller)
+## Kontroller
 
 | Handling | Spiller 1 | Spiller 2 |
 |---|---|---|
@@ -30,13 +34,16 @@ python -m http.server 8000
 | Rotér venstre | `A`  | `←`       |
 | Rotér høyre   | `D`  | `→`       |
 | Fyr      | `Mellomrom` | `Enter` |
-| Skjold (Fase 2) | `S` | `↓`    |
+| Skjold   | `S` | `↓`    |
+
+`R` = ny runde etter game over. Slå «AI P2» av for 2 mennesker; på for solo mot bots.
 
 ## Status
 
-- **Fase 1 (MVP):** to skip, newtonsk fysikk, wrap, skyting, kollisjoner,
-  jeteksos, score. ✅
-- **Fase 2:** skjold/energi, fuel-pods, gravitasjon, radar, lyd, `.map`-lasting.
+- **Fase 1 (MVP):** newtonsk fysikk, wrap, skyting, kollisjoner, jeteksos, score. ✅
+- **Fase 2 (pågår):** ekte `.map`-lasting, AI-bots + free-for-all m/ takeover,
+  drivstoff + fylling, liv/game-over, skjold, justerbar gravitasjon, landing. ✅
+  Gjenstår: stor-kart-scrolling + minimap, lyd, radar.
 - **Fase 3:** Turboraketti-lag (kart og våpen).
 
 ## Stack

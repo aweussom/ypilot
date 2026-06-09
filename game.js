@@ -1,10 +1,8 @@
 /*
- * jpilot — XPilot reimplementert i nettleseren. Fase 1 MVP.
+ * YPilot — XPilot reimplementert i nettleseren («because Y comes after X»).
  * Phaser 4. All spillogikk i én fil (se CLAUDE.md). Norsk i kommentarer.
- *
- * Fase 1: to skip, full newtonsk fysikk, wrap, skyting, kollisjoner,
- * jeteksos og score. Skjold/energi/fuel/gravitasjon/lyd/.map-lasting
- * kommer i Fase 2.
+ * (Arbeidskatalog/repo het opprinnelig «jpilot»; localStorage-nøkler er fortsatt
+ * `jpilot.*` av kompatibilitetshensyn.)
  */
 
 'use strict';

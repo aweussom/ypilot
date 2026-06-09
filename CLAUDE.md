@@ -16,7 +16,8 @@ den autoritative speccen for fysikk-konstanter, kart-format, entitets-former og
 byggerekkefølgen). Denne fila oppsummerer beslutningene som styrer *hvordan* kode
 skal skrives.
 
-**jpilot** er XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
+**YPilot** (arbeidskatalog/repo `jpilot`; localStorage-nøkler `jpilot.*` beholdes) er
+XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
 (Lunar Lander-slekt) med neon-wireframe-estetikk og lokal multiplayer på samme
 tastatur. Turboraketti-kart/-våpen er et bevisst utsatt lag (Fase 3).
 
