@@ -25,9 +25,11 @@ const PHYSICS = {
   bulletLife:   120,    // frames (~2s)
   fireCooldown: 13,     // frames mellom skudd
   noseOffset:   14,     // px — der kula/eksosen starter foran/bak senteret
-  bulletRadius: 4,      // px — bullet-hitbox
+  bulletRadius: 3,      // px — bullet-hitbox
+  shotDamage:   1,      // skade per treff
   // — Skip / liv / respawn —
   shipRadius:   8,      // px — skip-hitbox
+  shipHP:       5,      // treff skipet tåler før det dør (Turboraketti-stil)
   respawnDelay: 180,    // frames (~3s)
   spawnInvuln:  90,     // frames (~1.5s) free shield etter spawn/takeover (anti spawn-camp)
   startLives:   3,      // liv før game over
@@ -62,8 +64,10 @@ const AI = {
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
 const GAME = {
-  shipCount: 6,   // totalt antall skip på banen
-  humans:    2,   // menneske-styrte når AI-toggle er AV (resten bots); toggle PÅ = 1
+  humans:       2,    // menneske-styrte når AI-toggle er AV (resten bots); toggle PÅ = 1
+  minShips:     2,    // færrest skip uansett
+  maxShips:     8,    // flest skip
+  tilesPerShip: 300,  // kart-areal (ruter) per skip → større kart = flere skip
 };
 
 const COLORS = {
@@ -334,11 +338,11 @@ function makeTextures(scene) {
   g.generateTexture('ship', 32, 32);
   g.clear();
 
-  // Bullet — liten lysende prikk (ADD gir glød).
-  g.fillStyle(0xffffff, 0.35); g.fillCircle(8, 8, 7);
-  g.fillStyle(0xffffff, 0.7);  g.fillCircle(8, 8, 4);
-  g.fillStyle(0xffffff, 1.0);  g.fillCircle(8, 8, 2);
-  g.generateTexture('bullet', 16, 16);
+  // Bullet — liten lysende prikk (ADD gir glød). Mindre enn skipet.
+  g.fillStyle(0xffffff, 0.35); g.fillCircle(5, 5, 4);
+  g.fillStyle(0xffffff, 0.7);  g.fillCircle(5, 5, 2.4);
+  g.fillStyle(0xffffff, 1.0);  g.fillCircle(5, 5, 1.2);
+  g.generateTexture('bullet', 10, 10);
   g.clear();
 
   // Partikkel-prikk (eksos/eksplosjon).
@@ -543,6 +547,7 @@ class Ship {
     this.isBot = !!opts.isBot;
     this.label = opts.label || 'P?';
     this.eliminated = false;
+    this.hp = PHYSICS.shipHP;
 
     this.vx = 0; this.vy = 0;
     this.angle = this.spawn.angle;
@@ -598,6 +603,7 @@ class Ship {
     this.alive = true;
     this.invuln = PHYSICS.spawnInvuln;
     this.fuel = PHYSICS.fuelMax;
+    this.hp = PHYSICS.shipHP;
     this.marker.setVisible(false);
     this.countText.setVisible(false);
   }
@@ -812,7 +818,10 @@ class GameScene extends Phaser.Scene {
     // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
     let aiOn = true;
     try { aiOn = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
-    const humanCount = aiOn ? 1 : GAME.humans;
+    // Antall skip skaleres med kartets størrelse (større kart → flere skip).
+    const area = this.map.cols * this.map.rows;
+    const shipCount = Math.max(GAME.minShips, Math.min(GAME.maxShips, Math.round(area / GAME.tilesPerShip)));
+    const humanCount = Math.min(shipCount, aiOn ? 1 : GAME.humans);
 
     const humanKeyDefs = [
       { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S },
@@ -824,7 +833,7 @@ class GameScene extends Phaser.Scene {
     this.humanKeys = [];   // tastatur-providere (for takeover)
     this.humanCount = humanCount;
     this.ships = [];
-    for (let i = 0; i < GAME.shipCount; i++) {
+    for (let i = 0; i < shipCount; i++) {
       const human = i < humanCount;
       const ship = new Ship(this, {
         color: palette[i % palette.length],
@@ -911,11 +920,17 @@ class GameScene extends Phaser.Scene {
     const bullet = bulletSprite.getData('bullet');
     const ship   = shipSprite.getData('ship');
     if (!bullet || !ship || bullet.dead || !ship.alive) return;
-    if (bullet.owner === ship) return;   // egen kule treffer ikke egen eier
+    if (bullet.owner === ship) return;             // egen kule treffer ikke egen eier
+    if (ship.invuln > 0) { bullet.destroy(); return; }   // free shield absorberer
 
-    ship.die();
-    bullet.owner.kills++;
     bullet.destroy();
+    ship.hp -= PHYSICS.shotDamage;                 // skip tåler flere treff (Turboraketti-stil)
+    if (ship.hp <= 0) {
+      bullet.owner.kills++;
+      ship.die();
+    } else {
+      this.explosion.explode(4, ship.x, ship.y);   // liten treff-funk
+    }
   }
 
   update(time, delta) {
