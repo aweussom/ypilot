@@ -5,7 +5,7 @@
 XPilot reimagined in the browser. Phaser 4 + WebGL, neon-wireframe aesthetic,
 local multiplayer with AI bots, shields, fuel, and support for the original
 XPilot `.map` format. A homage to the XPilot crew from the University of Tromsø
-and to the Finnish author of Turboraketti.
+and to **Heikki Kosola**, the Finnish author of TurboRaketti II (1992).
 
 **Play online:** https://aweussom.github.io/ypilot/
 
@@ -42,9 +42,9 @@ python -m http.server 8000
 
 - **Fase 1 (MVP):** newtonsk fysikk, wrap, skyting, kollisjoner, jeteksos, score. ✅
 - **Fase 2 (pågår):** ekte `.map`-lasting, AI-bots + free-for-all m/ takeover,
-  drivstoff + fylling, liv/game-over, skjold, justerbar gravitasjon, landing. ✅
-  Gjenstår: stor-kart-scrolling + minimap, lyd, radar.
-- **Fase 3:** Turboraketti-lag (kart og våpen).
+  drivstoff + fylling, liv/game-over, skjold, justerbar gravitasjon, landing,
+  stor-kart single-player (scroll-kamera + minimap). ✅ Gjenstår: lyd, radar.
+- **Fase 3:** TurboRaketti II-lag (kart og våpen).
 
 ## Stack
 

@@ -41,7 +41,7 @@ XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
 tastatur. Turboraketti-kart/-våpen er et bevisst utsatt lag (Fase 3).
 
 Prosjektet er en homage til XPilot-folka fra Universitetet i Tromsø og til
-**Heikki Kosola**, den finske programmereren bak Turboraketti (utgitt 1992) —
+**Heikki Kosola**, den finske programmereren bak TurboRaketti II (utgitt 1992) —
 derav norsk som gjennomgående språk.
 
 ## Bygg, kjør, test
