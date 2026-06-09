@@ -61,6 +61,12 @@ inn i vegger der vegg-mekanikken tar fuel/skjold/liv (synergi med `wallLethalSpe
 fartsretning i `Ship.update`), og et skjoldet treff spretter ALLTID (dødelig-fart slått av for
 newbie-mennesker) → de overlever der de ellers ville krasjet. Bots upåvirket.
 
+**Mycel-fyll ✅:** vegg-INNSIDEN fylles med et glødende forgrenet vene-nett (`buildMycel` +
+`solidDepthField`): vener seedes fra vegg-kantene og vokser innover i solid (BFS-dybde-gradient +
+hash-jitter + forgrening), bakt inn i vegg-DynamicTexturen med kromatisk-aberrasjon (RGB-split,
+Solstice/Yggdrasil-frynse, stamme-løst). Deterministisk per kart, cachet på `scene.mycelVeins`.
+Tunbar «Mycel»-slider (Visuelt, 0 = av). 60 FPS på Kits 200×200 (bakt). Framtid: la det «gro».
+
 **Vegg-baking ✅ (branch `perf/dynamic-texture-bake`):** organiske vegg-lag bakes til ÉN
 `DynamicTexture` (`scene.wallImage`, vist som én ADD-quad) i stedet for å re-tessellere
 linjesegmenter hver frame. Geometri-capet er fjernet ved baking → full Avrunding/Organisk/

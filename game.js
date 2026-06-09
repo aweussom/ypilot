@@ -88,10 +88,10 @@ const AI = {
   shieldFuelMin: 12,    // ikke skjold under dette drivstoff-nivået (spar til manøvrering)
   // — Anti-selvmord: nødbremsen ser lengre fram jo raskere boten går (stoppdistanse), og et
   //   fart-tak hindrer at den redliner rett inn i en vegg. —
-  brakeBase:    2.0,    // blokker — grunn-fremsyn for vegg-deteksjon langs fartsretning
-  brakeLead:    1.6,    // blokker per (px/frame) fart — ekstra fremsyn (raskere = bremser tidligere)
-  brakeClose:   2.5,    // blokker — innenfor dette = «for sent å bremse», utløs skjold-refleks
-  cruiseSpeed:  4.5,    // px/frame — over dette sluttes å gasse når vi alt farer i ønsket retning
+  brakeBase:    2.5,    // blokker — grunn-fremsyn for vegg-deteksjon langs fartsretning
+  brakeLead:    2.0,    // blokker per (px/frame) fart — ekstra fremsyn (raskere = bremser tidligere)
+  brakeClose:   3.2,    // blokker — innenfor dette = «for sent å bremse», utløs skjold-refleks
+  cruiseSpeed:  4.0,    // px/frame — over dette sluttes å gasse når vi alt farer i ønsket retning
 };
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
@@ -145,6 +145,7 @@ let ROUNDING = 3;          // «Avrunding»: antall Chaikin-hjørnekutt for New-
 let ORGANIC = 8;           // px — organisk noise-forskyvning av konturen (0 = ren glatt kurve)
 let DETAIL = 0.02;         // fBm-frekvens — høyere = tettere/mer ruglete organisk variasjon
 let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
+let MYCEL = 0.7;           // mycel-fyll: glødende forgrenet vene-nett inni veggene (0 = av)
 let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
 function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(6, Math.max(0, v)); }
 function readRound() { return ROUNDING; }
@@ -575,6 +576,106 @@ function organicDisplace(pts, amount, freq) {
 }
 
 /* ----------------------------------------------------------------------------
+ * Mycel-fyll — vegg-INNSIDEN fylles med et glødende, forgrenet vene-nett (sopp-mycel /
+ * Yggdrasil fra Solstice, men UTEN sentral stamme). Vener seedes fra vegg-kantene og vokser
+ * INNOVER i de solide regionene, styrt av et BFS-dybdefelt (avstand-til-åpent), med hash-
+ * basert jitter og forgrening → deterministisk per kart (ingen Math.random → ingen flimmer).
+ * Pre-regnes én gang (cachet på scene), bakes inn i vegg-teksturen. Ref: memory levende-kart.
+ * ------------------------------------------------------------------------- */
+// «Lyn-nedslag»-look: lange rette løp brutt av skarpe knekk (sikksakk-bolter) som forgrener
+// seg i vide vinkler. Svak innover-pull + korte bolter → mindre klumping i sentrum enn et
+// gradient-følgende mycel ville gitt; boltene radierer fra kantene innover i den solide sonen.
+const MYCEL_CFG = {
+  seedStride: 4,      // seed hvert N-te kant-tile (mindre = tettere nett)
+  stepLen:    0.9,    // andel av blockSize per steg (lange rette løp → kantet lyn-look)
+  maxSteps:   18,     // maks steg per hoved-bolt (kort → ingen sentrum-klump)
+  branchProb: 0.14,   // hash-sannsynlighet for forgrening per steg
+  kinkProb:   0.30,   // sannsynlighet for et SKARPT lyn-knekk per steg
+  kinkAmt:    0.7,    // rad — størrelse på lyn-knekk
+  jitter:     0.12,   // rad — liten bølge mellom knekkene
+  inwardPull: 0.20,   // svak dragning mot dybde-gradienten (innover) — lav = mindre klumping
+  maxVeins:   3200,   // hardt tak (store kart) så teksturen ikke eksploderer
+};
+
+// BFS-dybdefelt: 0 = åpen celle, ≥1 = solid, der tallet er antall celler inn fra nærmeste åpne.
+// Out-of-bounds regnes som åpent (arena-kant), så grense-vegger får dybde 1.
+function solidDepthField(map) {
+  const cols = map.cols, rows = map.rows;
+  const depth = new Int16Array(cols * rows).fill(-1);
+  let q = [];
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      if (map.tiles[r][c] !== 'x') { depth[r * cols + c] = 0; q.push(r * cols + c); }
+  while (q.length) {
+    const nq = [];
+    for (const i of q) {
+      const c = i % cols, r = (i - c) / cols;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+        const ni = nr * cols + nc;
+        if (depth[ni] !== -1 || map.tiles[nr][nc] !== 'x') continue;
+        depth[ni] = depth[i] + 1; nq.push(ni);
+      }
+    }
+    q = nq;
+  }
+  return depth;
+}
+
+function buildMycel(map) {
+  const cols = map.cols, rows = map.rows, bs = map.blockSize;
+  const depth = solidDepthField(map);
+  const depthCell = (c, r) => (c < 0 || c >= cols || r < 0 || r >= rows) ? 0 : Math.max(0, depth[r * cols + c]);
+  const solidAt = (px, py) => depthCell(Math.floor(px / bs), Math.floor(py / bs)) >= 1;
+  // Innover-retning i et punkt: gradient av dybdefeltet (mot dypere solid).
+  const inwardAngle = (px, py) => {
+    const c = Math.floor(px / bs), r = Math.floor(py / bs);
+    const gx = depthCell(c + 1, r) - depthCell(c - 1, r);
+    const gy = depthCell(c, r + 1) - depthCell(c, r - 1);
+    return (gx === 0 && gy === 0) ? null : Math.atan2(gy, gx);
+  };
+
+  const veins = [];
+  const stack = [];
+  const grow = (x, y, ang, steps, seed) => {
+    const pts = [{ x, y }];
+    for (let s = 0; s < steps && veins.length + stack.length < MYCEL_CFG.maxVeins; s++) {
+      ang += (hash2(seed * 131 + s, (x | 0) + (y | 0) * 7) * 2 - 1) * MYCEL_CFG.jitter;  // liten bølge
+      if (hash2(seed * 257 + s, 3) < MYCEL_CFG.kinkProb)                                  // skarpt lyn-knekk
+        ang += (hash2(s, seed) < 0.5 ? -1 : 1) * MYCEL_CFG.kinkAmt;
+      const inn = inwardAngle(x, y);                 // svak dragning mot dybde-gradienten (innover)
+      if (inn !== null) {
+        let da = inn - ang; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+        ang += da * MYCEL_CFG.inwardPull;
+      }
+      const nx = x + Math.cos(ang) * bs * MYCEL_CFG.stepLen;
+      const ny = y + Math.sin(ang) * bs * MYCEL_CFG.stepLen;
+      if (!solidAt(nx, ny)) break;                   // nådde kanten → stopp (fyller kun solid)
+      x = nx; y = ny; pts.push({ x, y });
+      if (s > 2 && hash2(seed * 977 + s, 13) < MYCEL_CFG.branchProb) {
+        const off = (hash2(seed + s, 3) < 0.5 ? 1 : -1) * (0.7 + 0.6 * hash2(s, seed));  // vid lyn-forgrening
+        stack.push({ x, y, ang: ang + off, steps: Math.floor(steps * 0.55), seed: seed * 7 + s + 1 });
+      }
+    }
+    if (pts.length > 1) veins.push(pts);
+  };
+
+  let seedIx = 0;
+  for (let r = 0; r < rows && veins.length < MYCEL_CFG.maxVeins; r++)
+    for (let c = 0; c < cols; c++) {
+      if (depth[r * cols + c] !== 1) continue;        // kant-solid (depth 1) = der vener seedes
+      if ((seedIx++ % MYCEL_CFG.seedStride) !== 0) continue;
+      const x = (c + 0.5) * bs, y = (r + 0.5) * bs;
+      const inn = inwardAngle(x, y);
+      const ang = inn !== null ? inn : hash2(c, r) * Math.PI * 2;
+      grow(x, y, ang, MYCEL_CFG.maxSteps, c * 73856093 + r * 19349663);
+      while (stack.length) { const b = stack.pop(); grow(b.x, b.y, b.ang, b.steps, b.seed); }
+    }
+  return veins;
+}
+
+/* ----------------------------------------------------------------------------
  * Kart-renderer — neon-vegger i to moduser (persistert, se readLook):
  *   «trad» — klassiske blokk-kanter (XPilot-trofast).
  *   «new»  — organiske Chaikin-konturer. «Avrunding» (antall hjørne-kutt) er justerbar
@@ -609,6 +710,8 @@ function renderMap(scene, map) {
   // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
   scene.wallMap = map;
   scene.rawLoops = (readLook() !== 'trad') ? traceWallLoops(map) : null;
+  // Mycel-vener (deterministisk per kart) — regnes én gang her, bakes inn ved hver (re)bygging.
+  scene.mycelVeins = (readLook() !== 'trad') ? buildMycel(map) : null;
 
   // BAKING (ytelse): bak vegg-lagene til ÉN DynamicTexture og vis dem som én quad,
   // i stedet for å la Phaser re-tessellere titusenvis av linjesegmenter hver frame.
@@ -694,13 +797,35 @@ function rebuildNeonWalls(scene, rounding) {
     { w: 2,               c: 0xdff0ff,    a: 0.95,                depth: 1 },
   ];
 
+  // Mycel-fyll: tegn de cachede venene inn i en graphics med flere ADD-pass — bred halo +
+  // glød + kromatisk-aberrasjon (RGB-split) + nær-hvit kjerne (Solstice-aktig neon-frynse).
+  // Returnerer null hvis mycel er av/tomt. Tegnes UNDER konturen (ADD → rekkefølge er uansett
+  // kommutativ). Brukes både i bake (offscreen) og live-fallback.
+  const fillMycel = (g) => {
+    const stroke = (w, color, alpha, ox, oy) => {
+      g.lineStyle(w, color, alpha);
+      for (const v of scene.mycelVeins) {
+        g.beginPath(); g.moveTo(v[0].x + ox, v[0].y + oy);
+        for (let i = 1; i < v.length; i++) g.lineTo(v[i].x + ox, v[i].y + oy);
+        g.strokePath();
+      }
+    };
+    const M = MYCEL;
+    stroke(4.0, 0x4488ff,   0.05 * M,  0,    0);   // smal elektrisk halo
+    stroke(2.0, 0x88ccff,   0.11 * M,  0,    0);   // glød
+    stroke(1.4, 0xff3a6a,   0.17 * M, -0.8,  0);   // kromatisk rød (venstre-skift)
+    stroke(1.4, 0x3a6aff,   0.17 * M,  0.8,  0);   // kromatisk blå (høyre-skift)
+    stroke(0.8, 0xf0ffff,   0.50 * M,  0,    0);   // skarp hvit-blå lyn-kjerne
+  };
+  const hasMycel = isNew && scene.mycelVeins && scene.mycelVeins.length && MYCEL > 0;
+
   // Rydd forrige (DT klares under; live-graphics destrueres).
   const old = scene.neon;
   if (old && old.liveGfx) old.liveGfx.forEach(g => g && g.destroy());
 
   if (scene.wallDT) {
-    // BAKE: tegn de tre ADD-lagene til offscreen-graphics → inn i DynamicTexturen ÉN gang.
-    // Lagene er ADD-blendet, og DynamicTextureHandler honorerer hvert objekts blendMode
+    // BAKE: tegn mycel + de tre ADD-lagene til offscreen-graphics → inn i DynamicTexturen ÉN
+    // gang. Alt er ADD-blendet, og DynamicTextureHandler honorerer hvert objekts blendMode
     // (DRAW-kommando) → glødet akkumulerer korrekt inne i teksturen. Skaler ned ved cap.
     const sc = scene.wallBakeScale || 1;
     const offs = layers.map(L => {
@@ -710,6 +835,13 @@ function rebuildNeonWalls(scene, rounding) {
       if (sc !== 1) g.setScale(sc);
       return g;
     });
+    if (hasMycel) {
+      const mg = scene.make.graphics({ add: false });
+      fillMycel(mg);
+      mg.setBlendMode(Phaser.BlendModes.ADD);
+      if (sc !== 1) mg.setScale(sc);
+      offs.unshift(mg);   // under konturen
+    }
     scene.wallDT.clear();
     scene.wallDT.draw(offs, 0, 0);
     scene.wallDT.render();   // ← flush av kommandobufferet (det forrige forsøk glemte)
@@ -723,7 +855,13 @@ function rebuildNeonWalls(scene, rounding) {
       g.setBlendMode(Phaser.BlendModes.ADD);
       return g;
     });
-    scene.neon = { liveGfx: live, glowWide: live[0], glowMid: live[1], core: live[2], fuel: scene.fuelGfx };
+    let mycelG = null;
+    if (hasMycel) {
+      mycelG = scene.add.graphics().setDepth(0);
+      fillMycel(mycelG);
+      mycelG.setBlendMode(Phaser.BlendModes.ADD);
+    }
+    scene.neon = { liveGfx: mycelG ? [...live, mycelG] : live, glowWide: live[0], glowMid: live[1], core: live[2], fuel: scene.fuelGfx };
   }
 }
 
@@ -1093,7 +1231,7 @@ function makeAIProvider(self, scene) {
     // Fast [1.5,3,4.5]-blokk-sikt bremset for sent ved høy fart → bots krasjet. Nå skalerer
     // fremsynet med farten, så raske bots begynner å bremse i god tid.
     let danger = false, dangerClose = false;
-    if (speed > 0.5) {
+    if (speed > 0.3) {
       const vang = Math.atan2(self.vy, self.vx);
       const reach = bs * (AI.brakeBase + speed * AI.brakeLead);   // px stopp-margin
       const steps = Math.max(3, Math.ceil(reach / bs));
@@ -1104,16 +1242,19 @@ function makeAIProvider(self, scene) {
         }
       }
     }
+    // Nær-proximitets-skjold: enhver USKJOLDET vegg-berøring dreper (unntatt myk topp-landing),
+    // så selv sakte graze i trange korridorer var dødelig. Skjold ved ENHVER nær fare (uavhengig
+    // av fart) når vi er under dødelig-fart og har drivstoff → boten spretter i stedet for å dø.
+    if (dangerClose && speed <= PHYSICS.wallLethalSpeed && self.fuel > AI.shieldFuelMin) {
+      cmd.shield = true;
+    }
 
     let desired, allowThrust = false, allowFire = false;
     if (danger) {
-      // Pek mot fartsretningen og brems (retro-thrust) — unngår vegg-selvmord.
+      // Pek mot fartsretningen og brems (retro-thrust) — unngår vegg-selvmord. Over dødelig-fart
+      // er skjold nytteløst (treffet dreper uansett), så da gjelder kun maks brems.
       desired = Math.atan2(-self.vy, -self.vx);
       allowThrust = true;
-      // Skjold-refleks: kun i den OVERLEVBARE fart-sonen. Over wallLethalSpeed dreper treffet
-      // tross skjold (ny mekanikk), så skjold er nytteløst der — boten må heller bremse maks.
-      if (dangerClose && speed > AI.shieldSpeed && speed <= PHYSICS.wallLethalSpeed
-          && self.fuel > AI.shieldFuelMin) cmd.shield = true;
     } else {
       // Horisontal «vilje»: mot bevegelses-retningen (rute eller direkte). Følger vi en rute
       // rundt vegger, vil vi alltid fram; ellers hold keepDistance til målet.
@@ -1925,6 +2066,7 @@ const TUNING = [
   { g: 'Visuelt',   key: 'organic',       label: 'Organisk',      min: 0,    max: 24,   step: 1,     get: () => ORGANIC,              set: v => { ORGANIC = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'detail',        label: 'Detalj',        min: 0.005,max: 0.06, step: 0.005, get: () => DETAIL,               set: v => { DETAIL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'glow',          label: 'Glød',          min: 0,    max: 4,    step: 0.1,   get: () => GLOW_STRENGTH,        set: v => { GLOW_STRENGTH = +v; if (GAME_SCENE && GAME_SCENE.glowFilter) GAME_SCENE.glowFilter.outerStrength = +v; } },
+  { g: 'Visuelt',   key: 'mycel',         label: 'Mycel',         min: 0,    max: 2,    step: 0.1,   get: () => MYCEL,                set: v => { MYCEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
 ];
 
 // Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).

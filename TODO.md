@@ -22,13 +22,18 @@ Diagnostisert 2026-06-09.
 
 ## Andre parkerte ting
 
-- **«Fyll» veggene med organisk nettverk** (framtidig look) — i dag er veggene bare en
-  neon-kontur (tom innside). Fyll vegg-INNSIDEN med noe organisk og glødende, à la
-  Yggdrasil fra Solstice — MEN uten sentral stamme. Mer som **mycel** (sopp-hyfenes
-  forgrenede rot-nettverk): et distribuert, forgrenende vene-nett. Idé: space-colonization
-  / DLA / random-walk-vener seedet fra vegg-kantene, tegnet som tynne ADD-glødelinjer,
-  deterministisk per kart, pre-rendret (passer baking når den lander). Kan «gro» over tid
-  (jf. levende-kart). Ref: Solstice `screenshot-2.png` (Yggdrasil), men stamme-løs.
+- ✅ **«Fyll» veggene med organisk mycel-nettverk** — GJORT. `buildMycel` + `solidDepthField`
+  i game.js: vener seedes fra vegg-kantene (BFS-dybde 1) og vokser INNOVER i solid (styrt av
+  dybde-gradient + hash-jitter + forgrening), tegnes som ADD-glødelinjer med kromatisk-
+  aberrasjon (RGB-split, Yggdrasil-frynse) bakt inn i vegg-teksturen. Deterministisk per kart,
+  stamme-løst. Tunbar «Mycel»-slider (Visuelt, 0 = av). Framtid: la det «gro» over tid
+  (jf. levende-kart) — i dag er det statisk bakt.
+  - ⚠️ **RE-THINK vegg-fyll-utseendet (framtidig).** Tommy er ikke fornøyd med mycel/lyn-
+    looken — den duger FORELØPIG (viser tydelig hva som er fast vs. ikke-fast), men skal
+    tenkes på nytt. Observasjon: XPilot-screenshots viser at FASTE soner var HEL-FYLT, men
+    Tommy husker det ikke slik — han husker faste områder fylt med **TREKANTER**. Vurder
+    derfor en trekant-tessellering / trekant-mønster-fyll av solide soner (evt. hel-fyll med
+    subtil tekstur) i stedet for vene-nettet. Behold «viser fast vs. tomt»-funksjonen.
 - **Edge-bounce** — for lukkede kart med ufullstendig vegg-kant (motoren wrapper
   alltid i dag). Unødvendig for kart med 100 % solid ramme (Ekolos).
 - **Auto-shield / Newbie-modus** (toggle) — hjelp for de som krasjer i vegger hele
