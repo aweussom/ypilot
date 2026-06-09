@@ -16,7 +16,9 @@ const PHYSICS = {
   // — Bevegelse —
   thrustForce:  0.40,   // akselerasjon per frame ved full gass (rikelig over gravitasjons-taket
                         //   0.10 så skip klatrer lett; verdien styrer mest aksel-følelsen)
-  turnRate:     0.065,  // rad per frame
+  turnRate:     0.065,  // rad per frame (grunn-sving)
+  turnBoostLow: 0.9,    // ekstra sving-rate ved stillstand (TurboRaketti-skarp pivot i lav fart)
+  turnBoostSpeed: 4,    // px/frame — over denne farten: ren grunn-sving (stabilt i høy fart)
   maxSpeed:     8,      // px/frame — hardt sikkerhetstak (clamp)
   drag:         0.99,   // hastighet beholdt per frame (<1 = drag → terminal-fart; 1 = vakuum)
   // — Skyting —
@@ -823,6 +825,7 @@ class Ship {
     this.respawnTimer = 0;
     this.takeoverTimer = 0;
     this.shielded = false;
+    this.grounded = false;
 
     // Form: menneske = Starfighter, bot = TIE-fighter (byttes ved takeover).
     this.texKey = this.isBot ? 'ship-bot' : 'ship-human';
@@ -926,9 +929,13 @@ class Ship {
     this.shielded = !!input.shield && this.fuel > 0;
     if (this.shielded) this.fuel -= PHYSICS.shieldDrain * dtScale;
 
-    // Rotasjon
-    if (input.left)  this.angle -= PHYSICS.turnRate * dtScale;
-    if (input.right) this.angle += PHYSICS.turnRate * dtScale;
+    // Rotasjon — fart-avhengig: skarpere sving ved lav fart (TurboRaketti-pivot), normal
+    // i høy fart (stabilt). Boost avtar lineært fra stillstand til turnBoostSpeed.
+    const sp0 = Math.hypot(this.vx, this.vy);
+    const turn = PHYSICS.turnRate
+      * (1 + PHYSICS.turnBoostLow * Math.max(0, 1 - sp0 / PHYSICS.turnBoostSpeed));
+    if (input.left)  this.angle -= turn * dtScale;
+    if (input.right) this.angle += turn * dtScale;
 
     // Gass — newtonsk akselerasjon langs nesen. Krever drivstoff.
     const thrusting = input.thrust && this.fuel > 0;
@@ -993,17 +1000,17 @@ class Ship {
       this.fireTimer = PHYSICS.fireCooldown;
     }
 
-    // Fylling — hovre sakte nær en fuel-stasjon.
+    // Fylling — hvile på bakken lader sakte (TurboRaketti: tank opp på/ved base; hindrer
+    // også soft-lock når man er tom og landet på et kart uten stasjoner), ELLER hovre sakte
+    // nær en fuel-stasjon (#). `this.grounded` settes i landings-koden (forrige frame).
     if (this.fuel < PHYSICS.fuelMax) {
-      const map = this.scene.map;
-      if (Math.hypot(this.vx, this.vy) < REFUEL_SPEED && map.fuelStations) {
-        for (const f of map.fuelStations) {
-          if (Math.hypot(f.x - this.x, f.y - this.y) < REFUEL_RANGE) {
-            this.fuel = Math.min(PHYSICS.fuelMax, this.fuel + PHYSICS.fuelRefill * dtScale);
-            break;
-          }
+      let refueling = this.grounded;
+      if (!refueling && Math.hypot(this.vx, this.vy) < REFUEL_SPEED && this.scene.map.fuelStations) {
+        for (const f of this.scene.map.fuelStations) {
+          if (Math.hypot(f.x - this.x, f.y - this.y) < REFUEL_RANGE) { refueling = true; break; }
         }
       }
+      if (refueling) this.fuel = Math.min(PHYSICS.fuelMax, this.fuel + PHYSICS.fuelRefill * dtScale);
     }
     if (this.fuel < 0) this.fuel = 0;
 
@@ -1097,8 +1104,12 @@ class Ship {
     // Liv: respawn hvis liv igjen, ellers eliminert (ute av banen).
     if (this.lives > 0) {
       this.respawnTimer = PHYSICS.respawnDelay;
-      this.marker.setVisible(true);
-      this.countText.setVisible(true);
+      // Plassér respawn-ghost + nedtelling på SKIPETS spawn (ikke der det døde). Viktig
+      // for overtatte bots: takeover flyttet markøren til takeover-stedet, og uten denne
+      // re-plasseringen viste nedtellingen feil sted (særlig første død etter takeover).
+      this.marker.setTexture(this.texKey).setPosition(this.spawn.x, this.spawn.y)
+        .setRotation(this.spawn.angle).setAlpha(0.3).setVisible(true);
+      this.countText.setPosition(this.spawn.x, this.spawn.y - BLOCK).setVisible(true);
     } else {
       this.eliminated = true;
       this.scene.onEliminated(this);
