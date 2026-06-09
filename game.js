@@ -19,8 +19,13 @@ const PHYSICS = {
   turnRate:     0.065,  // rad per frame (grunn-sving)
   turnBoostLow: 0.9,    // ekstra sving-rate ved stillstand (TurboRaketti-skarp pivot i lav fart)
   turnBoostSpeed: 4,    // px/frame — over denne farten: ren grunn-sving (stabilt i høy fart)
-  maxSpeed:     8,      // px/frame — hardt sikkerhetstak (clamp)
+  maxSpeed:     8,      // px/frame — hardt sikkerhetstak (clamp) ved FULL tank
   drag:         0.99,   // hastighet beholdt per frame (<1 = drag → terminal-fart; 1 = vakuum)
+  // Drivstoff-boost («drivstoff-trykk-kompensasjon»): toppfarten skalerer MED drivstoff —
+  // full tank = maxSpeed, tom tank = maxSpeed·(1−fuelBoost). Snudd fra ekte fysikk (lett=rask)
+  // med vilje: et nyspawnet skip har full tank → høyest toppfart → kommer seg unna spawn-campere
+  // (som har brent drivstoff og er tregere). 0 = av. [tunbar, Bevegelse]
+  fuelBoost:    0.4,
   // — Skyting —
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
@@ -32,7 +37,7 @@ const PHYSICS = {
   shipRadius:   8,      // px — skip-hitbox
   shipHP:       5,      // treff skipet tåler før det dør (Turboraketti-stil)
   respawnDelay: 180,    // frames (~3s)
-  spawnInvuln:  90,     // frames (~1.5s) free shield etter spawn/takeover (anti spawn-camp)
+  spawnInvuln:  120,    // frames (~2s) free shield etter spawn/takeover (anti spawn-camp) [tunbar, Kamp]
   startLives:   3,      // liv før game over
   takeoverPause: 60,    // frames (~1s) skipet «fryser» m/ nedtelling når du tar over en bot
   // — Eksplosjon / blast-push —
@@ -55,6 +60,8 @@ const PHYSICS = {
   shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
   shieldBounce: 0.7,    // fart beholdt ved skjold-sprett mot vegg
   bounceKick:   1.1,    // ekstra utdytt-faktor ved sprett ut av fast underlag (skjold/invuln); var 1.5 [tunbar]
+  wallLethalSpeed: 5.5, // px/frame — vegg-treff RASKERE enn dette dreper tross skjold (kun grunne/
+                        // sakte treff spretter). invuln (spawn-grace) er unntatt. [tunbar]
   // — Landing —
   groundFriction: 0.92, // vx beholdt per frame ved bakke-kontakt (høyere = glir lengre)
 };
@@ -73,8 +80,14 @@ const AI = {
   // («target practice»-nivå: overlev og skyt fornuftig, ikke jakt aggressivt.)
   leadMax:      75,     // frames — maks ledetid for prediktiv sikting (ellers sikt på nåposisjon)
   gravComp:     1.0,    // 1 = full hovre-kompensasjon mot tyngdekraft (0 = ignorer gravitasjon)
-  shieldSpeed:  2.0,    // px/frame — skjold-refleks først når vi er på vei inn i vegg over denne farten
+  shieldSpeed:  1.4,    // px/frame — skjold-refleks først når vi er på vei inn i vegg over denne farten
   shieldFuelMin: 12,    // ikke skjold under dette drivstoff-nivået (spar til manøvrering)
+  // — Anti-selvmord: nødbremsen ser lengre fram jo raskere boten går (stoppdistanse), og et
+  //   fart-tak hindrer at den redliner rett inn i en vegg. —
+  brakeBase:    2.0,    // blokker — grunn-fremsyn for vegg-deteksjon langs fartsretning
+  brakeLead:    1.6,    // blokker per (px/frame) fart — ekstra fremsyn (raskere = bremser tidligere)
+  brakeClose:   2.5,    // blokker — innenfor dette = «for sent å bremse», utløs skjold-refleks
+  cruiseSpeed:  4.5,    // px/frame — over dette sluttes å gasse når vi alt farer i ønsket retning
 };
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
@@ -905,6 +918,104 @@ function lineClear(map, sx, sy, dx, dy, dist) {
   return true;
 }
 
+// Korteste delta fra→til, wrappet rundt kartet hvis edgewrap (toroidal).
+function wrappedDelta(map, fromX, fromY, toX, toY) {
+  let dx = toX - fromX, dy = toY - fromY;
+  if (map.edgewrap) {
+    if (Math.abs(dx) > map.widthPx / 2) dx -= Math.sign(dx) * map.widthPx;
+    if (Math.abs(dy) > map.heightPx / 2) dy -= Math.sign(dy) * map.heightPx;
+  }
+  return { dx, dy };
+}
+
+/* ----------------------------------------------------------------------------
+ * Grid-pathfinding for bots — BFS over map.tiles ('x' = blokkert). INGEN kart-
+ * enrichment: bruker rutenettet som allerede finnes. Respekterer edgewrap
+ * (toroidale naboer). Returnerer celle-liste [{c,r}, ...] fra start mot mål, eller
+ * null hvis ingen vei innen node-cap. Kalleren throttler hvor ofte dette kjøres.
+ * BFS gir korteste vei i celler; bot-en flyr den newtonsk via waypoint-styring.
+ * ------------------------------------------------------------------------- */
+const NAV = {
+  recomputeMs: 400,    // hvor ofte en bot regner ny rute (throttle pr. bot)
+  nodeCap:     8000,   // maks utforskede celler (sikkerhetstak mot patologiske kart)
+  losAhead:    12,     // hvor mange waypoints fram vi «string-puller» mot
+};
+
+function findPathCells(map, c0, r0, c1, r1) {
+  const cols = map.cols, rows = map.rows, wrap = !!map.edgewrap;
+  if (c0 === c1 && r0 === r1) return [{ c: c1, r: r1 }];
+  const prev = new Int32Array(cols * rows).fill(-1);
+  const seen = new Uint8Array(cols * rows);
+  const start = r0 * cols + c0, goal = r1 * cols + c1;
+  seen[start] = 1;
+  let queue = [start], explored = 0, found = false;
+  // Bredde-først lag-for-lag (uniform kost → korteste celle-vei).
+  while (queue.length && explored < NAV.nodeCap && !found) {
+    const next = [];
+    for (const cur of queue) {
+      explored++;
+      const cc = cur % cols, cr = (cur - cc) / cols;
+      const cand = [[cc + 1, cr], [cc - 1, cr], [cc, cr + 1], [cc, cr - 1]];
+      for (let k = 0; k < 4; k++) {
+        let nc = cand[k][0], nr = cand[k][1];
+        if (wrap) { nc = (nc + cols) % cols; nr = (nr + rows) % rows; }
+        else if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+        const ni = nr * cols + nc;
+        if (seen[ni]) continue;
+        seen[ni] = 1;
+        if (map.tiles[nr][nc] === 'x') continue;   // vegg: markert sett, men ikke gåbar
+        prev[ni] = cur;
+        if (ni === goal) { found = true; break; }
+        next.push(ni);
+      }
+      if (found) break;
+    }
+    queue = next;
+  }
+  if (!found) return null;
+  const path = [];
+  for (let cur = goal; cur !== -1; cur = prev[cur]) {
+    const cc = cur % cols;
+    path.push({ c: cc, r: (cur - cc) / cols });
+  }
+  path.reverse();
+  return path;
+}
+
+// Ønsket BEVEGELSES-retning for en bot: rett mot målet ved fri sikt, ellers langs en
+// BFS-rute rundt veggene (string-pullet mot fjerneste synlige waypoint). Sikting/skyting
+// bruker fortsatt det EKTE målet — dette styrer bare hvor boten flyr. Cacher ruta på
+// self._nav og regner kun på nytt ved throttle / mål-celle-bytte.
+function navSteerBearing(self, scene, map, target, dx, dy, dist, fallbackBearing) {
+  if (lineClear(map, self.x, self.y, dx, dy, dist)) { self._nav = null; return fallbackBearing; }
+
+  const bs = map.blockSize, now = scene.time.now;
+  const sc = Math.floor(self.x / bs), sr = Math.floor(self.y / bs);
+  const gc = Math.floor(target.x / bs), gr = Math.floor(target.y / bs);
+  let nav = self._nav;
+  if (!nav || nav.gc !== gc || nav.gr !== gr || (now - nav.t) > NAV.recomputeMs) {
+    nav = self._nav = { path: findPathCells(map, sc, sr, gc, gr), gc, gr, t: now };
+  }
+  const path = nav.path;
+  if (!path || path.length < 2) return fallbackBearing;
+
+  // Finn node nærmest boten (forbi passerte), string-pull så mot fjerneste node med fri sikt.
+  let startI = 0, bestD = Infinity;
+  const scanN = Math.min(path.length, NAV.losAhead + 4);
+  for (let i = 0; i < scanN; i++) {
+    const d = wrappedDelta(map, self.x, self.y, (path[i].c + 0.5) * bs, (path[i].r + 0.5) * bs);
+    const dd = d.dx * d.dx + d.dy * d.dy;
+    if (dd < bestD) { bestD = dd; startI = i; }
+  }
+  let chosen = Math.min(startI + 1, path.length - 1);
+  for (let i = Math.min(startI + NAV.losAhead, path.length - 1); i > startI; i--) {
+    const d = wrappedDelta(map, self.x, self.y, (path[i].c + 0.5) * bs, (path[i].r + 0.5) * bs);
+    if (lineClear(map, self.x, self.y, d.dx, d.dy, Math.hypot(d.dx, d.dy))) { chosen = i; break; }
+  }
+  const d = wrappedDelta(map, self.x, self.y, (path[chosen].c + 0.5) * bs, (path[chosen].r + 0.5) * bs);
+  return Math.atan2(d.dy, d.dx);
+}
+
 // Heuristisk AI (Increment 2): styr mot motstander, unngå vegger, skyt med fri sikt.
 // Samme {thrust,left,right,fire,shield}-grensesnitt som tastatur (inputProvider-søm).
 // Increment 3 (Gemini Nano-enriching) gir smartere posisjonering oppå dette.
@@ -915,10 +1026,12 @@ function makeAIProvider(self, scene) {
     const map = scene.map;
     const W = map.widthPx, H = map.heightPx;
 
-    // Nærmeste levende motstander (free-for-all) — korteste vei med wrap.
+    // Nærmeste levende motstander (free-for-all) — korteste vei med wrap. Hopp over USÅRBARE
+    // (invuln: nyspawnede / takeover-grace) — kuler absorberes uansett, så å jakte dem er
+    // ren spawn-camping. Å ignorere dem løser camping ved roten: boten lar nyspawnede være.
     let target = null, dx = 0, dy = 0, best = Infinity;
     for (const o of scene.ships) {
-      if (o === self || !o.alive || o.eliminated) continue;
+      if (o === self || !o.alive || o.eliminated || o.invuln > 0) continue;
       let ox = o.x - self.x, oy = o.y - self.y;
       if (map.edgewrap) {
         if (Math.abs(ox) > W / 2) ox -= Math.sign(ox) * W;
@@ -927,7 +1040,18 @@ function makeAIProvider(self, scene) {
       const d = Math.hypot(ox, oy);
       if (d < best) { best = d; target = o; dx = ox; dy = oy; }
     }
-    if (!target) return cmd;
+    if (!target) {
+      // Ingen lovlig mål (f.eks. bare nyspawnede igjen) → heng i lufta mot tyngdekraften,
+      // ikke frys på stedet (som ville vært ufrivillig spawn-camping).
+      if (GRAVITY > 0 && self.fuel > 0) {
+        let da = (-Math.PI / 2) - self.angle;
+        while (da > Math.PI) da -= 2 * Math.PI;
+        while (da < -Math.PI) da += 2 * Math.PI;
+        if (da > AI.turnDeadzone) cmd.right = true; else if (da < -AI.turnDeadzone) cmd.left = true;
+        if (Math.abs(da) < AI.aimedCone && self.vy > -0.5) cmd.thrust = true;
+      }
+      return cmd;
+    }
     const dist = best;
     const bearing = Math.atan2(dy, dx);
 
@@ -956,13 +1080,23 @@ function makeAIProvider(self, scene) {
       if (t > 0 && t < AI.leadMax) leadBearing = Math.atan2(dy + vry * t, dx + vrx * t);
     }
 
-    // Nødbrems: er skipet på vei (FARTSRETNING, ikke bare nese) inn i en vegg snart?
+    // Bevegelses-retning: fri sikt → jag direkte; ellers BFS-rute rundt veggene. Skiller
+    // FLYGE-retning (rundt hindringer) fra SIKTE-retning (leadBearing, mot ekte mål).
+    const moveBearing = navSteerBearing(self, scene, map, target, dx, dy, dist, leadBearing);
+    const following = !!(self._nav && self._nav.path && self._nav.path.length >= 2);
+
+    // Nødbrems: ser FRAMOVER langs fartsretningen, lengre jo raskere vi går (stoppdistanse).
+    // Fast [1.5,3,4.5]-blokk-sikt bremset for sent ved høy fart → bots krasjet. Nå skalerer
+    // fremsynet med farten, så raske bots begynner å bremse i god tid.
     let danger = false, dangerClose = false;
-    if (speed > 0.6) {
+    if (speed > 0.5) {
       const vang = Math.atan2(self.vy, self.vx);
-      for (const ahead of [1.5, 3, 4.5]) {
-        if (tileAt(map, self.x + Math.cos(vang) * bs * ahead, self.y + Math.sin(vang) * bs * ahead) === 'x') {
-          danger = true; if (ahead <= 1.5) dangerClose = true; break;
+      const reach = bs * (AI.brakeBase + speed * AI.brakeLead);   // px stopp-margin
+      const steps = Math.max(3, Math.ceil(reach / bs));
+      for (let i = 1; i <= steps; i++) {
+        const d = (i / steps) * reach;
+        if (tileAt(map, self.x + Math.cos(vang) * d, self.y + Math.sin(vang) * d) === 'x') {
+          danger = true; if (d < bs * AI.brakeClose) dangerClose = true; break;
         }
       }
     }
@@ -972,13 +1106,16 @@ function makeAIProvider(self, scene) {
       // Pek mot fartsretningen og brems (retro-thrust) — unngår vegg-selvmord.
       desired = Math.atan2(-self.vy, -self.vx);
       allowThrust = true;
-      // Skjold-refleks: rett før vegg-treff og for fort til å bremse → skjold = sprett, ikke død.
-      if (dangerClose && speed > AI.shieldSpeed && self.fuel > AI.shieldFuelMin) cmd.shield = true;
+      // Skjold-refleks: kun i den OVERLEVBARE fart-sonen. Over wallLethalSpeed dreper treffet
+      // tross skjold (ny mekanikk), så skjold er nytteløst der — boten må heller bremse maks.
+      if (dangerClose && speed > AI.shieldSpeed && speed <= PHYSICS.wallLethalSpeed
+          && self.fuel > AI.shieldFuelMin) cmd.shield = true;
     } else {
-      // Horisontal «vilje»: mot (predikert) mål hvis utenfor keepDistance.
-      const wantApproach = dist > bs * AI.keepDistance ? 1 : 0;
-      let tgtX = Math.cos(leadBearing) * wantApproach;
-      let tgtY = Math.sin(leadBearing) * wantApproach;
+      // Horisontal «vilje»: mot bevegelses-retningen (rute eller direkte). Følger vi en rute
+      // rundt vegger, vil vi alltid fram; ellers hold keepDistance til målet.
+      const wantApproach = (following || dist > bs * AI.keepDistance) ? 1 : 0;
+      let tgtX = Math.cos(moveBearing) * wantApproach;
+      let tgtY = Math.sin(moveBearing) * wantApproach;
 
       // Vegg rett foran nesen → styr unna (overstyrer den horisontale viljen med veer-retning).
       const look = bs * AI.lookahead;
@@ -1009,7 +1146,17 @@ function makeAIProvider(self, scene) {
     if (da > AI.turnDeadzone) cmd.right = true;
     else if (da < -AI.turnDeadzone) cmd.left = true;
 
-    if (allowThrust && Math.abs(da) < AI.aimedCone && self.fuel > 0) cmd.thrust = true;
+    // Fart-tak: cruiser vi alt raskt i ~ønsket retning, slutt å gasse (la drag dempe). Hindrer
+    // at boten redliner inn i vegger den ikke rekker å bremse for. Gjelder ikke ved nødbrems
+    // (da ER thrust retro-brems) — der vil vi alltid gasse mot farten.
+    let speedOK = true;
+    if (!danger && speed > AI.cruiseSpeed) {
+      let dv = desired - Math.atan2(self.vy, self.vx);
+      while (dv > Math.PI) dv -= 2 * Math.PI;
+      while (dv < -Math.PI) dv += 2 * Math.PI;
+      if (Math.abs(dv) < AI.aimedCone) speedOK = false;   // farer alt dit vi vil, fort nok
+    }
+    if (allowThrust && speedOK && Math.abs(da) < AI.aimedCone && self.fuel > 0) cmd.thrust = true;
 
     // Skyt når NESEN er på linje med LEDE-pekingen (egen vinkel, uavhengig av thrust-retning),
     // i rekkevidde, fri sikt, og ikke mens vi skjolder (skjold blokkerer skyting).
@@ -1180,10 +1327,12 @@ class Ship {
     const dragF = 1 - (1 - PHYSICS.drag) * dtScale;
     this.vx *= dragF; this.vy *= dragF;
 
-    // Hardt sikkerhetstak
+    // Hardt sikkerhetstak — skalert av drivstoff (drivstoff-boost): full tank = maxSpeed,
+    // tom tank = maxSpeed·(1−fuelBoost). Gir nyspawnede (full tank) en sjanse mot campere.
     const sp = Math.hypot(this.vx, this.vy);
-    if (sp > PHYSICS.maxSpeed) {
-      const f = PHYSICS.maxSpeed / sp;
+    const effMax = PHYSICS.maxSpeed * (1 - PHYSICS.fuelBoost * (1 - this.fuel / PHYSICS.fuelMax));
+    if (sp > effMax) {
+      const f = effMax / sp;
       this.vx *= f; this.vy *= f;
     }
 
@@ -1248,13 +1397,23 @@ class Ship {
     const speed = Math.hypot(this.vx, this.vy);
     this.grounded = false;
     if (tileAt(wmap, this.x, this.y) === 'x') {
-      if (this.shielded || this.invuln > 0) {
-        // Skjold / free-shield: sprett tilbake ut av veggen i stedet for å dø.
+      if (this.invuln > 0) {
+        // Spawn-/takeover-grace: sprett alltid harmløst ut (ingen død rett etter respawn).
         this.vx = -this.vx * PHYSICS.shieldBounce;
         this.vy = -this.vy * PHYSICS.shieldBounce;
         this.sprite.x += this.vx * dtScale * PHYSICS.bounceKick;
         this.sprite.y += this.vy * dtScale * PHYSICS.bounceKick;
-        if (this.shielded) this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;   // ekstra dren ved treff
+      } else if (this.shielded) {
+        if (speed > PHYSICS.wallLethalSpeed) {
+          this.die();   // for hardt treff: skjoldet holder ikke (XPilot-semantikk) → død
+        } else {
+          // Grunt/sakte treff: skjoldet spretter skipet ut, mot en ekstra drivstoff-kostnad.
+          this.vx = -this.vx * PHYSICS.shieldBounce;
+          this.vy = -this.vy * PHYSICS.shieldBounce;
+          this.sprite.x += this.vx * dtScale * PHYSICS.bounceKick;
+          this.sprite.y += this.vy * dtScale * PHYSICS.bounceKick;
+          this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;
+        }
       } else {
         const cellTop = Math.floor(this.y / bs) * bs;
         const fromAbove = this.vy >= 0 && tileAt(wmap, this.x, cellTop - 1) !== 'x';
@@ -1686,6 +1845,7 @@ const TUNING = [
   { g: 'Bevegelse', key: 'turnBoostSpeed',label: 'Boost-fart',    min: 1,    max: 8,    step: 0.5,   get: () => PHYSICS.turnBoostSpeed, set: v => PHYSICS.turnBoostSpeed = +v },
   { g: 'Bevegelse', key: 'maxSpeed',      label: 'Maks fart',     min: 4,    max: 16,   step: 1,     get: () => PHYSICS.maxSpeed,     set: v => PHYSICS.maxSpeed = +v },
   { g: 'Bevegelse', key: 'drag',          label: 'Drag',          min: 0.95, max: 1,    step: 0.002, get: () => PHYSICS.drag,         set: v => PHYSICS.drag = +v },
+  { g: 'Bevegelse', key: 'fuelBoost',     label: 'Drivstoff-boost',min: 0,   max: 0.7,  step: 0.05,  get: () => PHYSICS.fuelBoost,    set: v => PHYSICS.fuelBoost = +v },
   // — Landing —
   { g: 'Landing',   key: 'groundFriction',label: 'Friksjon',      min: 0.7,  max: 1,    step: 0.01,  get: () => PHYSICS.groundFriction, set: v => PHYSICS.groundFriction = +v },
   { g: 'Landing',   key: 'landCrash',     label: 'Krasj-fart',    min: 3,    max: 12,   step: 0.5,   get: () => LAND_CRASH_SPEED,     set: v => LAND_CRASH_SPEED = +v },
@@ -1697,6 +1857,8 @@ const TUNING = [
   // — Skjold / våpen —
   { g: 'Kamp',      key: 'shieldDrain',   label: 'Skjold-dren',   min: 0,    max: 2,    step: 0.1,   get: () => PHYSICS.shieldDrain,  set: v => PHYSICS.shieldDrain = +v },
   { g: 'Kamp',      key: 'shieldBounce',  label: 'Skjold-sprett', min: 0.2,  max: 1,    step: 0.05,  get: () => PHYSICS.shieldBounce, set: v => PHYSICS.shieldBounce = +v },
+  { g: 'Kamp',      key: 'wallLethal',    label: 'Dødelig fart',  min: 2,    max: 16,   step: 0.5,   get: () => PHYSICS.wallLethalSpeed, set: v => PHYSICS.wallLethalSpeed = +v },
+  { g: 'Kamp',      key: 'spawnInvuln',   label: 'Spawn-skjold',  min: 30,   max: 240,  step: 15,    get: () => PHYSICS.spawnInvuln,  set: v => PHYSICS.spawnInvuln = +v },
   { g: 'Kamp',      key: 'bounceKick',    label: 'Sprett-boost',  min: 1,    max: 2.5,  step: 0.05,  get: () => PHYSICS.bounceKick,   set: v => PHYSICS.bounceKick = +v },
   { g: 'Kamp',      key: 'blastForce',    label: 'Blast-dytt',    min: 0,    max: 12,   step: 0.5,   get: () => PHYSICS.blastForce,   set: v => PHYSICS.blastForce = +v },
   { g: 'Kamp',      key: 'bulletSpeed',   label: 'Kulefart',      min: 6,    max: 24,   step: 1,     get: () => PHYSICS.bulletSpeed,  set: v => PHYSICS.bulletSpeed = +v },

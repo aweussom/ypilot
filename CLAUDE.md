@@ -33,6 +33,22 @@ bloom + pulserende halo. **Tuning-panel** (fanene Bevegelse/Landing/Drivstoff/Ka
 live-sliders bundet til `PHYSICS`/render-tilstand, persistert i `localStorage['ypilot.tuning']`
 (+ Eksporter-popup). Fart-avhengig sving, bakke-lading, tunbart sprett/blast.
 
+**Bot-pathfinding + anti-selvmord ✅:** AI-en (`makeAIProvider`) ruter nå rundt vegger via
+BFS over `map.tiles` (`findPathCells`/`navSteerBearing`, ingen kart-enrichment, edgewrap-aware,
+throttlet recompute pr. bot). Fri sikt → jag direkte; ellers string-pull mot fjerneste synlige
+waypoint. Sikting/skyting bruker fortsatt ekte mål. **Ny mekanikk:** vegg-treff over
+`PHYSICS.wallLethalSpeed` (5.5, tunbar i Kamp-fanen) DREPER tross skjold — kun grunne/sakte
+treff spretter (XPilot-semantikk); `invuln` (spawn-grace) er unntatt. Botene kjenner regelen:
+fart-skalert nødbrems (`AI.brakeBase/brakeLead`), fart-tak (`AI.cruiseSpeed`), og skjold-refleks
+kun i overlevbar fart-sone.
+
+**Anti-spawn-camp + drivstoff-boost ✅:** (1) bots hopper over USÅRBARE (`invuln`) mål i mål-
+utvelgelsen → «glemmer» nyspawnede og jakter neste lovlige motstander (ingen camping). (2)
+**Drivstoff-boost** («drivstoff-trykk-kompensasjon», `PHYSICS.fuelBoost`, tunbar i Bevegelse):
+toppfart skalerer MED tank — full tank = `maxSpeed`, tom = `maxSpeed·(1−fuelBoost)`. Snudd fra
+ekte fysikk med vilje: nyspawnet (full tank) er raskest → kommer unna campere. (3) Spawn-skjold
+`PHYSICS.spawnInvuln` økt til ~2s, tunbar i Kamp. (2)+(3) er mest for framtidig menneske-MP.
+
 **Vegg-baking ✅ (branch `perf/dynamic-texture-bake`):** organiske vegg-lag bakes til ÉN
 `DynamicTexture` (`scene.wallImage`, vist som én ADD-quad) i stedet for å re-tessellere
 linjesegmenter hver frame. Geometri-capet er fjernet ved baking → full Avrunding/Organisk/
