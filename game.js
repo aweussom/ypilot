@@ -145,7 +145,8 @@ let ROUNDING = 3;          // «Avrunding»: antall Chaikin-hjørnekutt for New-
 let ORGANIC = 8;           // px — organisk noise-forskyvning av konturen (0 = ren glatt kurve)
 let DETAIL = 0.02;         // fBm-frekvens — høyere = tettere/mer ruglete organisk variasjon
 let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
-let MYCEL = 0.7;           // mycel-fyll: glødende forgrenet vene-nett inni veggene (0 = av)
+let MYCEL = 0.7;           // mycel-fyll: glødende forgrenet vene-nett inni veggene (New, 0 = av)
+let TRI_FILL = 0.6;        // trekant-fyll av solide soner i Trad-look (0 = av)
 let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
 function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(6, Math.max(0, v)); }
 function readRound() { return ROUNDING; }
@@ -817,7 +818,26 @@ function rebuildNeonWalls(scene, rounding) {
     stroke(1.4, 0x3a6aff,   0.17 * M,  0.8,  0);   // kromatisk blå (høyre-skift)
     stroke(0.8, 0xf0ffff,   0.50 * M,  0,    0);   // skarp hvit-blå lyn-kjerne
   };
+  // Trad-fyll: triangulert neon-mesh inni de solide sonene (viser «fast» tydelig, slik Tommy
+  // husker XPilot). Per solid tile: delte indre kanter (topp/venstre, hver tegnet én gang) +
+  // én uniform anti-diagonal → hver celle blir to trekanter. Dim ADD, under den lyse konturen.
+  const fillTrad = (g) => {
+    const bs = map.blockSize, T = TRI_FILL;
+    g.lineStyle(1, COLORS.wall, 0.16 * T);
+    for (let r = 0; r < map.rows; r++)
+      for (let c = 0; c < map.cols; c++) {
+        if (map.tiles[r][c] !== 'x') continue;
+        const x = c * bs, y = r * bs;
+        if (isWall(map, c, r - 1)) g.lineBetween(x, y, x + bs, y);   // delt indre topp-kant
+        if (isWall(map, c - 1, r)) g.lineBetween(x, y, x, y + bs);   // delt indre venstre-kant
+        g.lineBetween(x, y + bs, x + bs, y);                          // uniform anti-diagonal
+      }
+  };
+
+  // Velg fyll etter look: New → mycel, Trad → trekanter (eller ingen hvis slått av).
   const hasMycel = isNew && scene.mycelVeins && scene.mycelVeins.length && MYCEL > 0;
+  const hasTrad = !isNew && TRI_FILL > 0;
+  const fillFn = hasMycel ? fillMycel : (hasTrad ? fillTrad : null);
 
   // Rydd forrige (DT klares under; live-graphics destrueres).
   const old = scene.neon;
@@ -835,9 +855,9 @@ function rebuildNeonWalls(scene, rounding) {
       if (sc !== 1) g.setScale(sc);
       return g;
     });
-    if (hasMycel) {
+    if (fillFn) {
       const mg = scene.make.graphics({ add: false });
-      fillMycel(mg);
+      fillFn(mg);
       mg.setBlendMode(Phaser.BlendModes.ADD);
       if (sc !== 1) mg.setScale(sc);
       offs.unshift(mg);   // under konturen
@@ -855,13 +875,13 @@ function rebuildNeonWalls(scene, rounding) {
       g.setBlendMode(Phaser.BlendModes.ADD);
       return g;
     });
-    let mycelG = null;
-    if (hasMycel) {
-      mycelG = scene.add.graphics().setDepth(0);
-      fillMycel(mycelG);
-      mycelG.setBlendMode(Phaser.BlendModes.ADD);
+    let fillG = null;
+    if (fillFn) {
+      fillG = scene.add.graphics().setDepth(0);
+      fillFn(fillG);
+      fillG.setBlendMode(Phaser.BlendModes.ADD);
     }
-    scene.neon = { liveGfx: mycelG ? [...live, mycelG] : live, glowWide: live[0], glowMid: live[1], core: live[2], fuel: scene.fuelGfx };
+    scene.neon = { liveGfx: fillG ? [...live, fillG] : live, glowWide: live[0], glowMid: live[1], core: live[2], fuel: scene.fuelGfx };
   }
 }
 
@@ -2067,6 +2087,7 @@ const TUNING = [
   { g: 'Visuelt',   key: 'detail',        label: 'Detalj',        min: 0.005,max: 0.06, step: 0.005, get: () => DETAIL,               set: v => { DETAIL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'glow',          label: 'Glød',          min: 0,    max: 4,    step: 0.1,   get: () => GLOW_STRENGTH,        set: v => { GLOW_STRENGTH = +v; if (GAME_SCENE && GAME_SCENE.glowFilter) GAME_SCENE.glowFilter.outerStrength = +v; } },
   { g: 'Visuelt',   key: 'mycel',         label: 'Mycel',         min: 0,    max: 2,    step: 0.1,   get: () => MYCEL,                set: v => { MYCEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'triFill',       label: 'Trekanter',     min: 0,    max: 2,    step: 0.1,   get: () => TRI_FILL,             set: v => { TRI_FILL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
 ];
 
 // Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).
