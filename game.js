@@ -54,6 +54,7 @@ const PHYSICS = {
   // — Skjold —
   shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
   shieldBounce: 0.7,    // fart beholdt ved skjold-sprett mot vegg
+  bounceKick:   1.1,    // ekstra utdytt-faktor ved sprett ut av fast underlag (skjold/invuln); var 1.5 [tunbar]
   // — Landing —
   groundFriction: 0.92, // vx beholdt per frame ved bakke-kontakt (høyere = glir lengre)
 };
@@ -123,10 +124,12 @@ let   UPRIGHT_RATE = 0.06;        // rad/frame — auto-oppretting mot loddrett 
  * Tuning-tilstand (justeres live via Tuning-panelet; persisteres i localStorage
  * 'ypilot.tuning' — som jeg/Claude kan lese direkte via Chrome-pluginen).
  * ------------------------------------------------------------------------- */
-let ROUNDING = 3;          // «Avrunding»: antall Chaikin-hjørnekutt for New-look-konturer (0–5)
+let ROUNDING = 3;          // «Avrunding»: antall Chaikin-hjørnekutt for New-look-konturer (0–6)
+let ORGANIC = 8;           // px — organisk noise-forskyvning av konturen (0 = ren glatt kurve)
+let DETAIL = 0.02;         // fBm-frekvens — høyere = tettere/mer ruglete organisk variasjon
 let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
 let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
-function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(5, Math.max(0, v)); }
+function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(6, Math.max(0, v)); }
 function readRound() { return ROUNDING; }
 
 /* ----------------------------------------------------------------------------
@@ -508,6 +511,52 @@ function chaikin(pts, iters) {
   return p;
 }
 
+/* Organisk «vekst» fra grid-et: forskyv konturen med deterministisk fBm-noise. Grid-et er
+ * bare en guide; veggene vokser fram med litt tilfeldig, organisk variasjon. Stabilt per
+ * posisjon (hash-basert, ingen Math.random) → ingen flimring mellom (re)bygginger. */
+function hash2(ix, iy) {
+  let h = (ix | 0) * 374761393 + (iy | 0) * 668265263;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function valueNoise(x, y) {
+  const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);   // smoothstep
+  const n00 = hash2(x0, y0), n10 = hash2(x0 + 1, y0), n01 = hash2(x0, y0 + 1), n11 = hash2(x0 + 1, y0 + 1);
+  const a = n00 + (n10 - n00) * sx, b = n01 + (n11 - n01) * sx;
+  return a + (b - a) * sy;                                          // [0,1)
+}
+function fbm(x, y) {   // 3 oktaver → rikere, fraktal-aktig detalj
+  let v = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < 3; o++) { v += valueNoise(x * f, y * f) * amp; f *= 2; amp *= 0.5; }
+  return v;
+}
+
+// Del opp lukket løkke så ingen kant > maxLen (nok punkter til at noise-forskyvning biter).
+function subdivideLoop(pts, maxLen) {
+  const out = [], n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    out.push(a);
+    const segs = Math.floor(Math.hypot(b.x - a.x, b.y - a.y) / maxLen);
+    for (let s = 1; s < segs; s++) { const t = s / segs; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); }
+  }
+  return out;
+}
+
+// Forskyv hvert punkt langs konturens normal med fBm → bølgende, organisk vegg.
+function organicDisplace(pts, amount, freq) {
+  if (amount <= 0) return pts;
+  const n = pts.length, out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n], p = pts[i];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const d = (fbm(p.x * freq, p.y * freq) * 2 - 1) * amount;       // [-amount, amount]
+    out[i] = { x: p.x + (-dy / len) * d, y: p.y + (dx / len) * d }; // langs normal
+  }
+  return out;
+}
+
 /* ----------------------------------------------------------------------------
  * Kart-renderer — neon-vegger i to moduser (persistert, se readLook):
  *   «trad» — klassiske blokk-kanter (XPilot-trofast).
@@ -543,6 +592,10 @@ function renderMap(scene, map) {
   // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
   scene.wallMap = map;
   scene.rawLoops = (readLook() !== 'trad') ? traceWallLoops(map) : null;
+  // NB: RenderTexture-baking ble forsøkt (Phaser 4 `add.renderTexture` + `draw`) men
+  // rendret ingenting synlig — droppet inntil videre. Vegger tegnes direkte (live graphics);
+  // geometrien er BUNDET (capped Chaikin + grov oppdeling) så det holder seg spillbart.
+  scene.wallRT = null;
   rebuildNeonWalls(scene, clampRound(readRound()));
 }
 
@@ -552,13 +605,19 @@ function renderMap(scene, map) {
 function rebuildNeonWalls(scene, rounding) {
   const map = scene.wallMap;
   if (!map) return;
-  const old = scene.neon;
-  if (old) { old.glowWide && old.glowWide.destroy(); old.glowMid && old.glowMid.destroy(); old.core && old.core.destroy(); }
 
   const isNew = readLook() !== 'trad';
   let drawInto;
   if (isNew && scene.rawLoops) {
-    const loops = scene.rawLoops.map(l => chaikin(l, rounding));
+    // Chaikin-glatt (avrunding) → del opp → organisk noise-forskyvning → siste glatting.
+    // Chaikin er capet (2^n punkt-eksplosjon) og oppdelingen er grov, så punkt-antallet
+    // holdes BUNDET — vegger tegnes direkte hver frame (ingen RT), så dette må være billig.
+    const cap = Math.min(rounding, 4);
+    const loops = scene.rawLoops.map(l => {
+      let p = chaikin(l, cap);
+      if (ORGANIC > 0) { p = subdivideLoop(p, 10); p = organicDisplace(p, ORGANIC, DETAIL); p = chaikin(p, 1); }
+      return p;
+    });
     drawInto = (g, w, color, alpha) => {
       g.lineStyle(w, color, alpha);
       for (const loop of loops) {
@@ -584,16 +643,39 @@ function rebuildNeonWalls(scene, rounding) {
         }
     };
   }
-  const mk = (w, color, alpha, depth) => {
-    const g = scene.add.graphics().setDepth(depth);
-    drawInto(g, w, color, alpha);
-    g.setBlendMode(Phaser.BlendModes.ADD);
-    return g;
-  };
-  const glowWide = mk(isNew ? 18 : 10, COLORS.wall, isNew ? 0.11 : 0.08, 0);
-  const glowMid  = mk(isNew ? 8  : 4,  COLORS.wall, isNew ? 0.20 : 0.18, 0);
-  const core     = mk(2, 0xdff0ff, 0.95, 1);
-  scene.neon = { glowWide, glowMid, core, fuel: scene.fuelGfx };
+  // Tre lag: bred halo + midtre + nær-hvit kjerne (alle ADD).
+  const layers = [
+    { w: isNew ? 18 : 10, c: COLORS.wall, a: isNew ? 0.11 : 0.08, depth: 0 },
+    { w: isNew ? 8  : 4,  c: COLORS.wall, a: isNew ? 0.20 : 0.18, depth: 0 },
+    { w: 2,               c: 0xdff0ff,    a: 0.95,                depth: 1 },
+  ];
+
+  // Rydd forrige (RT klares; live-graphics destrueres).
+  const old = scene.neon;
+  if (old && old.liveGfx) old.liveGfx.forEach(g => g && g.destroy());
+
+  if (scene.wallRT) {
+    // BAKE: tegn lagene til offscreen-graphics → inn i RenderTexturen (én gang), riv offscreen.
+    const offs = layers.map(L => {
+      const g = scene.make.graphics({ add: false });
+      drawInto(g, L.w, L.c, L.a);
+      g.setBlendMode(Phaser.BlendModes.ADD);
+      return g;
+    });
+    scene.wallRT.clear();
+    scene.wallRT.draw(offs, 0, 0);
+    offs.forEach(g => g.destroy());
+    scene.neon = { rt: scene.wallRT, fuel: scene.fuelGfx };
+  } else {
+    // Fallback: live graphics (hvis RT ikke kunne lages).
+    const live = layers.map(L => {
+      const g = scene.add.graphics().setDepth(L.depth);
+      drawInto(g, L.w, L.c, L.a);
+      g.setBlendMode(Phaser.BlendModes.ADD);
+      return g;
+    });
+    scene.neon = { liveGfx: live, glowWide: live[0], glowMid: live[1], core: live[2], fuel: scene.fuelGfx };
+  }
 }
 
 /* ----------------------------------------------------------------------------
@@ -1138,8 +1220,8 @@ class Ship {
         // Skjold / free-shield: sprett tilbake ut av veggen i stedet for å dø.
         this.vx = -this.vx * PHYSICS.shieldBounce;
         this.vy = -this.vy * PHYSICS.shieldBounce;
-        this.sprite.x += this.vx * dtScale * 1.5;
-        this.sprite.y += this.vy * dtScale * 1.5;
+        this.sprite.x += this.vx * dtScale * PHYSICS.bounceKick;
+        this.sprite.y += this.vy * dtScale * PHYSICS.bounceKick;
         if (this.shielded) this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;   // ekstra dren ved treff
       } else {
         const cellTop = Math.floor(this.y / bs) * bs;
@@ -1452,13 +1534,19 @@ class GameScene extends Phaser.Scene {
     if (this.over) return;
     const dtScale = Math.min(delta / (1000 / 60), 2);  // clamp ved hakking
 
-    // Pulserende neon: vegg-haloen «puster» (to lag i lett motfase → levende skimmer),
-    // fuel-stasjonene blinker mykt. Kjernen står stødig.
+    // Pulserende neon: vegg-glødet «puster». Baket RT → animér hele teksturens alpha
+    // (billig, én quad). Fallback (live graphics) → pust halo-lagene som før.
+    // «Glød» styres av kamera-Glow-filteret, som blomstrer de bakte, lyse veggene.
     if (this.neon) {
       const t = time * 0.001;
       const breathe = 0.5 + 0.5 * Math.sin(t * 1.4);
-      this.neon.glowWide.setAlpha(0.45 + 0.55 * breathe);
-      this.neon.glowMid.setAlpha(0.7 + 0.3 * (1 - breathe));
+      if (this.neon.rt) {
+        this.neon.rt.setAlpha(0.82 + 0.18 * breathe);
+      } else if (this.neon.glowWide) {
+        const gm = GLOW_STRENGTH / 1.6;
+        this.neon.glowWide.setAlpha((0.45 + 0.55 * breathe) * gm);
+        this.neon.glowMid.setAlpha((0.7 + 0.3 * (1 - breathe)) * gm);
+      }
       if (this.neon.fuel) this.neon.fuel.setAlpha(0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3)));
     }
 
@@ -1577,10 +1665,14 @@ const TUNING = [
   // — Skjold / våpen —
   { g: 'Kamp',      key: 'shieldDrain',   label: 'Skjold-dren',   min: 0,    max: 2,    step: 0.1,   get: () => PHYSICS.shieldDrain,  set: v => PHYSICS.shieldDrain = +v },
   { g: 'Kamp',      key: 'shieldBounce',  label: 'Skjold-sprett', min: 0.2,  max: 1,    step: 0.05,  get: () => PHYSICS.shieldBounce, set: v => PHYSICS.shieldBounce = +v },
+  { g: 'Kamp',      key: 'bounceKick',    label: 'Sprett-boost',  min: 1,    max: 2.5,  step: 0.05,  get: () => PHYSICS.bounceKick,   set: v => PHYSICS.bounceKick = +v },
+  { g: 'Kamp',      key: 'blastForce',    label: 'Blast-dytt',    min: 0,    max: 12,   step: 0.5,   get: () => PHYSICS.blastForce,   set: v => PHYSICS.blastForce = +v },
   { g: 'Kamp',      key: 'bulletSpeed',   label: 'Kulefart',      min: 6,    max: 24,   step: 1,     get: () => PHYSICS.bulletSpeed,  set: v => PHYSICS.bulletSpeed = +v },
   { g: 'Kamp',      key: 'fireCooldown',  label: 'Skyte-pause',   min: 4,    max: 30,   step: 1,     get: () => PHYSICS.fireCooldown, set: v => PHYSICS.fireCooldown = +v },
   // — Visuelt —
-  { g: 'Visuelt',   key: 'round',         label: 'Avrunding',     min: 0,    max: 5,    step: 1,     get: () => ROUNDING,             set: v => { ROUNDING = clampRound(v); if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'round',         label: 'Avrunding',     min: 0,    max: 6,    step: 1,     get: () => ROUNDING,             set: v => { ROUNDING = clampRound(v); if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'organic',       label: 'Organisk',      min: 0,    max: 24,   step: 1,     get: () => ORGANIC,              set: v => { ORGANIC = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'detail',        label: 'Detalj',        min: 0.005,max: 0.06, step: 0.005, get: () => DETAIL,               set: v => { DETAIL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'glow',          label: 'Glød',          min: 0,    max: 4,    step: 0.1,   get: () => GLOW_STRENGTH,        set: v => { GLOW_STRENGTH = +v; if (GAME_SCENE && GAME_SCENE.glowFilter) GAME_SCENE.glowFilter.outerStrength = +v; } },
 ];
 
