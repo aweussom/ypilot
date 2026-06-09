@@ -1304,6 +1304,23 @@ class Ship {
     // Skjold: hold-tast, krever drivstoff. Dreneres mens oppe; blokkerer egen skyting,
     // absorberer kuler, gjør deg uskadelig (men spretter av vegger). Se die()/onBulletHit.
     this.shielded = !!input.shield && this.fuel > 0;
+
+    // Newbie-modus: auto-skjold rett før et vegg-treff (menneske-skip). Føler langs
+    // FARTSRETNINGEN, kort fram (kun når treffet er nært nok til å ikke kunne unngås), så
+    // det ikke sløser drivstoff. Engasjerer uansett fart — i newbie spretter et skjoldet
+    // vegg-treff ALLTID (se vegg-kollisjonen), så de overlever der de ellers ville dødd.
+    if (NEWBIE && !this.isBot && this.alive && this.invuln <= 0 && this.fuel > PHYSICS.shieldDrain) {
+      const m = this.scene.map, bs = m.blockSize, sp = Math.hypot(this.vx, this.vy);
+      if (sp > 0.6) {
+        const vang = Math.atan2(this.vy, this.vx);
+        const reach = bs * (1.0 + sp * 0.35);
+        const steps = Math.max(2, Math.ceil(reach / bs));
+        for (let i = 1; i <= steps; i++) {
+          const d = (i / steps) * reach;
+          if (tileAt(m, this.x + Math.cos(vang) * d, this.y + Math.sin(vang) * d) === 'x') { this.shielded = true; break; }
+        }
+      }
+    }
     if (this.shielded) this.fuel -= PHYSICS.shieldDrain * dtScale;
 
     // Rotasjon — fart-avhengig: skarpere sving ved lav fart (TurboRaketti-pivot), normal
@@ -1408,7 +1425,9 @@ class Ship {
         this.sprite.x += this.vx * dtScale * PHYSICS.bounceKick;
         this.sprite.y += this.vy * dtScale * PHYSICS.bounceKick;
       } else if (this.shielded) {
-        if (speed > PHYSICS.wallLethalSpeed) {
+        // Newbie-mennesker spretter alltid (dødelig-fart slått av) → modusen redder dem faktisk.
+        const newbieSafe = NEWBIE && !this.isBot;
+        if (speed > PHYSICS.wallLethalSpeed && !newbieSafe) {
           this.die();   // for hardt treff: skjoldet holder ikke (XPilot-semantikk) → død
         } else {
           // Grunt/sakte treff: skjoldet spretter skipet ut, mot en ekstra drivstoff-kostnad.
@@ -1826,6 +1845,7 @@ async function boot() {
   setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
   setupMapSelector(sel);
   setupAIToggle();
+  setupNewbieToggle();
   setupLookControl();
   buildTuningPanel();
 
@@ -1842,6 +1862,11 @@ async function boot() {
 function readAIOn() {
   try { return localStorage.getItem('ypilot.ai') !== 'off'; } catch (e) { return true; }
 }
+
+// Newbie-modus (auto-shield): live-toggle, persistert. Når PÅ skjolder menneske-skip
+// automatisk rett før vegg-treff, og et skjoldet treff spretter alltid (ingen dødelig-fart).
+const NEWBIE_KEY = 'ypilot.newbie';
+let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) === 'on'; } catch (e) { return false; } })();
 
 // Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
 const LOOK_KEY = 'ypilot.look';
@@ -2018,6 +2043,17 @@ function setupAIToggle() {
   cb.addEventListener('change', () => {
     try { localStorage.setItem('ypilot.ai', cb.checked ? 'on' : 'off'); } catch (e) { /* privat modus */ }
     location.reload();
+  });
+}
+
+// Newbie-modus-toggle (auto-shield). LIVE — ingen reload (leser global NEWBIE hver frame).
+function setupNewbieToggle() {
+  const cb = document.getElementById('newbie-toggle');
+  if (!cb) return;
+  cb.checked = NEWBIE;
+  cb.addEventListener('change', () => {
+    NEWBIE = cb.checked;
+    try { localStorage.setItem(NEWBIE_KEY, NEWBIE ? 'on' : 'off'); } catch (e) { /* privat modus */ }
   });
 }
 

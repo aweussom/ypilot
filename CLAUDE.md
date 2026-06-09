@@ -56,6 +56,11 @@ kan drepe → uavgjort (TurboRaketti II-følelse). Avgjøres i `GameScene.update
 inn i vegger der vegg-mekanikken tar fuel/skjold/liv (synergi med `wallLethalSpeed`). Tunbart:
 «Blast-dytt» (`blastForce`) + «Blast-vidde» (`blastRadius`) i Kamp.
 
+**Newbie-modus (auto-shield) ✅:** live-toggle «Newbie» i bunnlinja (global `NEWBIE`, persistert
+`ypilot.newbie`). PÅ → menneske-skip auto-skjolder rett før vegg-treff (fart-skalert føler langs
+fartsretning i `Ship.update`), og et skjoldet treff spretter ALLTID (dødelig-fart slått av for
+newbie-mennesker) → de overlever der de ellers ville krasjet. Bots upåvirket.
+
 **Vegg-baking ✅ (branch `perf/dynamic-texture-bake`):** organiske vegg-lag bakes til ÉN
 `DynamicTexture` (`scene.wallImage`, vist som én ADD-quad) i stedet for å re-tessellere
 linjesegmenter hver frame. Geometri-capet er fjernet ved baking → full Avrunding/Organisk/
