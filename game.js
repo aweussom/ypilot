@@ -114,10 +114,20 @@ const FUEL_COLOR = 0x33ff99;      // neon-grønn fuel-stasjon
 // hardere landing (overlev opp til LAND_CRASH_SPEED), behold lateral fart (glir), og rett
 // opp skipet etterpå. Skrå landing tolereres; nesa vris mot loddrett når den hviler.
 const LAND_SPEED = 3;             // px/frame — under dette = «myk» landing (uten skade uansett)
-const LAND_CRASH_SPEED = 7;       // px/frame — flate-treff raskere enn dette = krasj (mellom = hard, men overlev)
+let   LAND_CRASH_SPEED = 7;       // px/frame — flate-treff raskere enn dette = krasj (mellom = hard, men overlev) [tunbar]
 const LAND_ANGLE_TOL = 0.25;      // rad (~14°) — (beholdt; brukes ikke lenger til å gate landing)
 const LAND_MARGIN = 12;           // px senteret hviler over vegg-toppen
-const UPRIGHT_RATE = 0.06;        // rad/frame — auto-oppretting mot loddrett etter landing
+let   UPRIGHT_RATE = 0.06;        // rad/frame — auto-oppretting mot loddrett etter landing [tunbar]
+
+/* ----------------------------------------------------------------------------
+ * Tuning-tilstand (justeres live via Tuning-panelet; persisteres i localStorage
+ * 'ypilot.tuning' — som jeg/Claude kan lese direkte via Chrome-pluginen).
+ * ------------------------------------------------------------------------- */
+let ROUNDING = 3;          // «Avrunding»: antall Chaikin-hjørnekutt for New-look-konturer (0–5)
+let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
+let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
+function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(5, Math.max(0, v)); }
+function readRound() { return ROUNDING; }
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
@@ -441,47 +451,149 @@ function makeTextures(scene) {
 }
 
 /* ----------------------------------------------------------------------------
- * Kart-renderer — neon-vegger. Tegner kun kanter der en fylt rute møter en
- * tom (kontur), ikke fylte blokker. Statisk, tegnet én gang.
+ * Vegg-kontur som ORGANISKE løkker (for «New look»): spor grensen mellom solid og tom
+ * langs hjørne-gitteret, kjed segmentene til lukkede løkker, og Chaikin-glatt dem →
+ * flytende kanter i stedet for blokk-trapper. Statisk, regnes én gang.
+ * ------------------------------------------------------------------------- */
+function traceWallLoops(map) {
+  const solid = (c, r) => isWall(map, c, r);
+  const adj = new Map();                          // hjørne-key -> [nabo-keys]
+  const key = (x, y) => x + ',' + y;
+  const ensure = k => { let v = adj.get(k); if (!v) { v = []; adj.set(k, v); } return v; };
+  const link = (ax, ay, bx, by) => { const a = key(ax, ay), b = key(bx, by); ensure(a).push(b); ensure(b).push(a); };
+  for (let r = 0; r < map.rows; r++)
+    for (let c = 0; c < map.cols; c++) {
+      if (!solid(c, r)) continue;
+      if (!solid(c, r - 1)) link(c, r, c + 1, r);             // topp
+      if (!solid(c, r + 1)) link(c, r + 1, c + 1, r + 1);     // bunn
+      if (!solid(c - 1, r)) link(c, r, c, r + 1);             // venstre
+      if (!solid(c + 1, r)) link(c + 1, r, c + 1, r + 1);     // høyre
+    }
+  const eKey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
+  const used = new Set();
+  const loops = [];
+  for (const [start, nbs] of adj) {
+    for (const first of nbs) {
+      if (used.has(eKey(start, first))) continue;
+      const loop = [start];
+      let prev = start, cur = first, guard = 0;
+      used.add(eKey(prev, cur));
+      while (cur !== start && guard++ < 200000) {
+        loop.push(cur);
+        let next = null;
+        for (const n of adj.get(cur)) if (n !== prev && !used.has(eKey(cur, n))) { next = n; break; }
+        if (next === null) break;
+        used.add(eKey(cur, next));
+        prev = cur; cur = next;
+      }
+      if (loop.length >= 4) loops.push(loop);
+    }
+  }
+  const bs = map.blockSize;
+  return loops.map(l => l.map(k => { const p = k.split(','); return { x: +p[0] * bs, y: +p[1] * bs }; }));
+}
+
+// Chaikin corner-cutting på en LUKKET løkke → avrundede hjørner. Flere iterasjoner = mykere.
+function chaikin(pts, iters) {
+  let p = pts;
+  for (let it = 0; it < iters; it++) {
+    const out = [], n = p.length;
+    for (let i = 0; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      out.push({ x: a.x * 0.75 + b.x * 0.25, y: a.y * 0.75 + b.y * 0.25 });
+      out.push({ x: a.x * 0.25 + b.x * 0.75, y: a.y * 0.25 + b.y * 0.75 });
+    }
+    p = out;
+  }
+  return p;
+}
+
+/* ----------------------------------------------------------------------------
+ * Kart-renderer — neon-vegger i to moduser (persistert, se readLook):
+ *   «trad» — klassiske blokk-kanter (XPilot-trofast).
+ *   «new»  — organiske Chaikin-konturer. «Avrunding» (antall hjørne-kutt) er justerbar
+ *            LIVE via slideren: rawLoops caches, rebuildNeonWalls re-glatter dem billig.
+ * Vegg-lag: bred halo (pulseres) + midtre + nær-hvit kjerne, alle ADD. Soft bloom via
+ * kamera-Glow-filteret i create() (kun new). bg + fuel tegnes én gang.
  * ------------------------------------------------------------------------- */
 function renderMap(scene, map) {
-  // Spillefelt-bakgrunn + ramme — viser hvor kartet (og dermed wrap-grensen) går.
+  const bs = map.blockSize;
   const bg = scene.add.graphics();
-  bg.fillStyle(0x0a0f1e, 1);            // litt lysere enn bakgrunnen utenfor (#05060a)
+  bg.fillStyle(0x0a0f1e, 1);
   bg.fillRect(0, 0, map.widthPx, map.heightPx);
-  bg.lineStyle(2, 0x2a4f8f, 0.9);       // svak ramme markerer wrap-grensen
+  bg.lineStyle(2, 0x2a4f8f, 0.9);
   bg.strokeRect(0, 0, map.widthPx, map.heightPx);
   bg.setDepth(-1);
 
-  const g = scene.add.graphics();
-  g.lineStyle(1.5, COLORS.wall, 0.9);
-  const bs = map.blockSize;
-  for (let r = 0; r < map.rows; r++) {
-    for (let c = 0; c < map.cols; c++) {
-      if (map.tiles[r][c] !== 'x') continue;
-      const x = c * bs, y = r * bs;
-      if (!isWall(map, c, r - 1)) g.lineBetween(x, y, x + bs, y);
-      if (!isWall(map, c, r + 1)) g.lineBetween(x, y + bs, x + bs, y + bs);
-      if (!isWall(map, c - 1, r)) g.lineBetween(x, y, x, y + bs);
-      if (!isWall(map, c + 1, r)) g.lineBetween(x + bs, y, x + bs, y + bs);
-    }
-  }
-  g.setBlendMode(Phaser.BlendModes.ADD);
-  g.setDepth(0);
-
-  // Fuel-stasjoner — neon-markør (sirkel + kryss).
+  // Fuel-stasjoner — pulserende neon-markør (statisk; uavhengig av look/avrunding).
+  let fuelGfx = null;
   if (map.fuelStations && map.fuelStations.length) {
-    const fg = scene.add.graphics();
-    fg.lineStyle(2, FUEL_COLOR, 0.9);
-    const rad = map.blockSize * 0.42;
+    fuelGfx = scene.add.graphics().setDepth(1);
+    fuelGfx.lineStyle(2, FUEL_COLOR, 0.95);
+    const rad = bs * 0.42;
     for (const f of map.fuelStations) {
-      fg.strokeCircle(f.x, f.y, rad);
-      fg.lineBetween(f.x - rad * 0.5, f.y, f.x + rad * 0.5, f.y);
-      fg.lineBetween(f.x, f.y - rad * 0.5, f.x, f.y + rad * 0.5);
+      fuelGfx.strokeCircle(f.x, f.y, rad);
+      fuelGfx.lineBetween(f.x - rad * 0.5, f.y, f.x + rad * 0.5, f.y);
+      fuelGfx.lineBetween(f.x, f.y - rad * 0.5, f.x, f.y + rad * 0.5);
     }
-    fg.setBlendMode(Phaser.BlendModes.ADD);
-    fg.setDepth(0);
+    fuelGfx.setBlendMode(Phaser.BlendModes.ADD);
   }
+  scene.fuelGfx = fuelGfx;
+
+  // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
+  scene.wallMap = map;
+  scene.rawLoops = (readLook() !== 'trad') ? traceWallLoops(map) : null;
+  rebuildNeonWalls(scene, clampRound(readRound()));
+}
+
+// (Re)bygger de tre neon-vegg-lagene. Kalles ved oppstart OG live når «Avrunding» dras.
+// Trad: blokk-kanter (avrunding ignoreres). New: cachede løkker Chaikin-glattet `rounding` ganger
+// (0 = skarpe hjørner, høyere = mer trekant-kuttede/avrundede). bg + fuel røres ikke.
+function rebuildNeonWalls(scene, rounding) {
+  const map = scene.wallMap;
+  if (!map) return;
+  const old = scene.neon;
+  if (old) { old.glowWide && old.glowWide.destroy(); old.glowMid && old.glowMid.destroy(); old.core && old.core.destroy(); }
+
+  const isNew = readLook() !== 'trad';
+  let drawInto;
+  if (isNew && scene.rawLoops) {
+    const loops = scene.rawLoops.map(l => chaikin(l, rounding));
+    drawInto = (g, w, color, alpha) => {
+      g.lineStyle(w, color, alpha);
+      for (const loop of loops) {
+        g.beginPath();
+        g.moveTo(loop[0].x, loop[0].y);
+        for (let i = 1; i < loop.length; i++) g.lineTo(loop[i].x, loop[i].y);
+        g.closePath();
+        g.strokePath();
+      }
+    };
+  } else {
+    const bs = map.blockSize;
+    drawInto = (g, w, color, alpha) => {
+      g.lineStyle(w, color, alpha);
+      for (let r = 0; r < map.rows; r++)
+        for (let c = 0; c < map.cols; c++) {
+          if (map.tiles[r][c] !== 'x') continue;
+          const x = c * bs, y = r * bs;
+          if (!isWall(map, c, r - 1)) g.lineBetween(x, y, x + bs, y);
+          if (!isWall(map, c, r + 1)) g.lineBetween(x, y + bs, x + bs, y + bs);
+          if (!isWall(map, c - 1, r)) g.lineBetween(x, y, x, y + bs);
+          if (!isWall(map, c + 1, r)) g.lineBetween(x + bs, y, x + bs, y + bs);
+        }
+    };
+  }
+  const mk = (w, color, alpha, depth) => {
+    const g = scene.add.graphics().setDepth(depth);
+    drawInto(g, w, color, alpha);
+    g.setBlendMode(Phaser.BlendModes.ADD);
+    return g;
+  };
+  const glowWide = mk(isNew ? 18 : 10, COLORS.wall, isNew ? 0.11 : 0.08, 0);
+  const glowMid  = mk(isNew ? 8  : 4,  COLORS.wall, isNew ? 0.20 : 0.18, 0);
+  const core     = mk(2, 0xdff0ff, 0.95, 1);
+  scene.neon = { glowWide, glowMid, core, fuel: scene.fuelGfx };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1125,9 +1237,21 @@ class GameScene extends Phaser.Scene {
 
   create() {
     this.map = MAP;
+    GAME_SCENE = this;            // for live tuning (rebuild av vegger, glød-styrke)
 
     makeTextures(this);
     renderMap(this, this.map);
+
+    // New look: ekte soft bloom via kamera-Glow-filter (Phaser 4 filters) — WebGL-ekvivalenten
+    // til Solstice sin shadowBlur. Glør hele scenen (vegger, skip, kuler) for «smeltende» neon.
+    // Filter-kontrolleren lagres så «Glød»-slideren kan justere outerStrength live.
+    // Pakket i try/catch så et evt. API-avvik ikke knekker spillet (faller tilbake til lag-glød).
+    if (readLook() !== 'trad') {
+      try {
+        const cam = this.cameras.main;
+        if (cam.filters) this.glowFilter = cam.filters.internal.addGlow(0x88ccff, GLOW_STRENGTH, 0, 1, false, 6, 14);
+      } catch (e) { console.warn('Glow-filter utilgjengelig — bruker kun lag-glød.', e); }
+    }
 
     // Felles eksplosjons-emitter (radial burst, gjenbrukes).
     this.explosion = this.add.particles(0, 0, 'spark', {
@@ -1328,6 +1452,16 @@ class GameScene extends Phaser.Scene {
     if (this.over) return;
     const dtScale = Math.min(delta / (1000 / 60), 2);  // clamp ved hakking
 
+    // Pulserende neon: vegg-haloen «puster» (to lag i lett motfase → levende skimmer),
+    // fuel-stasjonene blinker mykt. Kjernen står stødig.
+    if (this.neon) {
+      const t = time * 0.001;
+      const breathe = 0.5 + 0.5 * Math.sin(t * 1.4);
+      this.neon.glowWide.setAlpha(0.45 + 0.55 * breathe);
+      this.neon.glowMid.setAlpha(0.7 + 0.3 * (1 - breathe));
+      if (this.neon.fuel) this.neon.fuel.setAlpha(0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3)));
+    }
+
     for (const ship of this.ships) ship.update(dtScale);
 
     for (let i = this.bullets.length - 1; i >= 0; i--) {
@@ -1379,9 +1513,12 @@ async function boot() {
     try { localStorage.setItem(MAP_KEY, 'test'); } catch (e) { /* privat modus */ }
   }
 
+  loadTuning();                   // anvend lagrede tuning-verdier FØR Phaser starter
   setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
   setupMapSelector(sel);
   setupAIToggle();
+  setupLookControl();
+  buildTuningPanel();
 
   new Phaser.Game({
     type: Phaser.AUTO,
@@ -1397,10 +1534,141 @@ function readAIOn() {
   try { return localStorage.getItem('ypilot.ai') !== 'off'; } catch (e) { return true; }
 }
 
-// Fyller kart-velgeren fra manifestet, reload ved valg. I single-player (AI på) vises
-// ALLE kart — store får scroll-kamera + minimap. I fler-menneske-lokalt (AI av) vises
-// kun små kart (fit-til-skjerm). Svartlistede kart utelates uansett.
-async function setupMapSelector(current) {
+// Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
+const LOOK_KEY = 'ypilot.look';
+function readLook() {
+  try { return localStorage.getItem(LOOK_KEY) || 'new'; } catch (e) { return 'new'; }
+}
+
+// Trad/New-look-velger. Reload ved bytte (rendringen bygges ved scene-create).
+function setupLookControl() {
+  const sel = document.getElementById('look-select');
+  if (!sel) return;
+  sel.value = readLook();
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem(LOOK_KEY, sel.value); } catch (e) { /* privat modus */ }
+    location.reload();
+  });
+}
+
+/* ----------------------------------------------------------------------------
+ * Tuning-panel — alle live-justerbare knotter, gruppert i faner. Verdiene anvendes
+ * umiddelbart (get/set peker rett på PHYSICS/AI/render-tilstand) og persisteres i
+ * localStorage 'ypilot.tuning'. «Eksporter» viser en JSON-popup; alternativt leser
+ * Claude localStorage direkte via Chrome-pluginen. Legg til nye knotter i TUNING.
+ * ------------------------------------------------------------------------- */
+const TUNING_KEY = 'ypilot.tuning';
+const TUNING = [
+  // — Bevegelse —
+  { g: 'Bevegelse', key: 'thrustForce',   label: 'Thrust',        min: 0.1,  max: 0.8,  step: 0.01,  get: () => PHYSICS.thrustForce,  set: v => PHYSICS.thrustForce = +v },
+  { g: 'Bevegelse', key: 'turnRate',      label: 'Sving',         min: 0.02, max: 0.15, step: 0.005, get: () => PHYSICS.turnRate,     set: v => PHYSICS.turnRate = +v },
+  { g: 'Bevegelse', key: 'turnBoostLow',  label: 'Sving-boost',   min: 0,    max: 2,    step: 0.1,   get: () => PHYSICS.turnBoostLow, set: v => PHYSICS.turnBoostLow = +v },
+  { g: 'Bevegelse', key: 'turnBoostSpeed',label: 'Boost-fart',    min: 1,    max: 8,    step: 0.5,   get: () => PHYSICS.turnBoostSpeed, set: v => PHYSICS.turnBoostSpeed = +v },
+  { g: 'Bevegelse', key: 'maxSpeed',      label: 'Maks fart',     min: 4,    max: 16,   step: 1,     get: () => PHYSICS.maxSpeed,     set: v => PHYSICS.maxSpeed = +v },
+  { g: 'Bevegelse', key: 'drag',          label: 'Drag',          min: 0.95, max: 1,    step: 0.002, get: () => PHYSICS.drag,         set: v => PHYSICS.drag = +v },
+  // — Landing —
+  { g: 'Landing',   key: 'groundFriction',label: 'Friksjon',      min: 0.7,  max: 1,    step: 0.01,  get: () => PHYSICS.groundFriction, set: v => PHYSICS.groundFriction = +v },
+  { g: 'Landing',   key: 'landCrash',     label: 'Krasj-fart',    min: 3,    max: 12,   step: 0.5,   get: () => LAND_CRASH_SPEED,     set: v => LAND_CRASH_SPEED = +v },
+  { g: 'Landing',   key: 'uprightRate',   label: 'Opprett-rate',  min: 0.01, max: 0.2,  step: 0.01,  get: () => UPRIGHT_RATE,         set: v => UPRIGHT_RATE = +v },
+  // — Drivstoff —
+  { g: 'Drivstoff', key: 'fuelThrust',    label: 'Gass-bruk',     min: 0,    max: 0.5,  step: 0.01,  get: () => PHYSICS.fuelThrust,   set: v => PHYSICS.fuelThrust = +v },
+  { g: 'Drivstoff', key: 'fuelShot',      label: 'Skudd-bruk',    min: 0,    max: 6,    step: 0.5,   get: () => PHYSICS.fuelShot,     set: v => PHYSICS.fuelShot = +v },
+  { g: 'Drivstoff', key: 'fuelRefill',    label: 'Fyll-rate',     min: 0.1,  max: 2,    step: 0.1,   get: () => PHYSICS.fuelRefill,   set: v => PHYSICS.fuelRefill = +v },
+  // — Skjold / våpen —
+  { g: 'Kamp',      key: 'shieldDrain',   label: 'Skjold-dren',   min: 0,    max: 2,    step: 0.1,   get: () => PHYSICS.shieldDrain,  set: v => PHYSICS.shieldDrain = +v },
+  { g: 'Kamp',      key: 'shieldBounce',  label: 'Skjold-sprett', min: 0.2,  max: 1,    step: 0.05,  get: () => PHYSICS.shieldBounce, set: v => PHYSICS.shieldBounce = +v },
+  { g: 'Kamp',      key: 'bulletSpeed',   label: 'Kulefart',      min: 6,    max: 24,   step: 1,     get: () => PHYSICS.bulletSpeed,  set: v => PHYSICS.bulletSpeed = +v },
+  { g: 'Kamp',      key: 'fireCooldown',  label: 'Skyte-pause',   min: 4,    max: 30,   step: 1,     get: () => PHYSICS.fireCooldown, set: v => PHYSICS.fireCooldown = +v },
+  // — Visuelt —
+  { g: 'Visuelt',   key: 'round',         label: 'Avrunding',     min: 0,    max: 5,    step: 1,     get: () => ROUNDING,             set: v => { ROUNDING = clampRound(v); if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'glow',          label: 'Glød',          min: 0,    max: 4,    step: 0.1,   get: () => GLOW_STRENGTH,        set: v => { GLOW_STRENGTH = +v; if (GAME_SCENE && GAME_SCENE.glowFilter) GAME_SCENE.glowFilter.outerStrength = +v; } },
+];
+
+// Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).
+function loadTuning() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(TUNING_KEY) || '{}'); } catch (e) { /* privat modus */ }
+  for (const t of TUNING) if (saved[t.key] !== undefined && !Number.isNaN(+saved[t.key])) t.set(saved[t.key]);
+}
+function persistTuning() {
+  const snap = {};
+  for (const t of TUNING) snap[t.key] = t.get();
+  try { localStorage.setItem(TUNING_KEY, JSON.stringify(snap)); } catch (e) { /* privat modus */ }
+}
+// Komplett øyeblikksbilde for eksport (inkl. gravitasjon + look som bor utenfor TUNING).
+function exportTuning() {
+  const snap = { look: readLook(), gravity: +(+GRAVITY).toFixed(4) };
+  for (const t of TUNING) snap[t.key] = +(+t.get()).toFixed(4);
+  return JSON.stringify(snap, null, 2);
+}
+
+function buildTuningPanel() {
+  const root = document.getElementById('tuning');
+  if (!root) return;
+  const groups = [...new Set(TUNING.map(t => t.g))];
+  let activeTab = groups[0];
+  try { activeTab = localStorage.getItem('ypilot.tuningTab') || groups[0]; } catch (e) { /* */ }
+  if (!groups.includes(activeTab)) activeTab = groups[0];
+
+  root.innerHTML = '';
+  const title = document.createElement('div'); title.className = 't-title'; title.textContent = 'Tuning';
+  root.appendChild(title);
+
+  const tabs = document.createElement('div'); tabs.className = 't-tabs';
+  const body = document.createElement('div'); body.className = 't-body';
+  root.appendChild(tabs); root.appendChild(body);
+
+  const dec = step => (step < 1 ? (step < 0.01 ? 3 : (step < 0.1 ? 3 : 2)) : 0);
+  const renderBody = () => {
+    body.innerHTML = '';
+    for (const t of TUNING.filter(t => t.g === activeTab)) {
+      const row = document.createElement('label'); row.className = 't-row';
+      const name = document.createElement('span'); name.className = 't-name'; name.textContent = t.label;
+      const val = document.createElement('span'); val.className = 't-val';
+      const sl = document.createElement('input');
+      sl.type = 'range'; sl.min = t.min; sl.max = t.max; sl.step = t.step; sl.value = t.get();
+      val.textContent = (+t.get()).toFixed(dec(t.step));
+      sl.addEventListener('input', () => { t.set(sl.value); val.textContent = (+t.get()).toFixed(dec(t.step)); persistTuning(); });
+      row.appendChild(name); row.appendChild(sl); row.appendChild(val);
+      body.appendChild(row);
+    }
+  };
+  for (const grp of groups) {
+    const b = document.createElement('button'); b.className = 't-tab'; b.textContent = grp;
+    if (grp === activeTab) b.classList.add('active');
+    b.addEventListener('click', () => {
+      activeTab = grp;
+      try { localStorage.setItem('ypilot.tuningTab', grp); } catch (e) { /* */ }
+      tabs.querySelectorAll('.t-tab').forEach(x => x.classList.toggle('active', x.textContent === grp));
+      renderBody();
+    });
+    tabs.appendChild(b);
+  }
+  renderBody();
+
+  const exp = document.createElement('button'); exp.className = 't-export'; exp.textContent = 'Eksporter';
+  exp.addEventListener('click', showExportModal);
+  root.appendChild(exp);
+}
+
+function showExportModal() {
+  let m = document.getElementById('export-modal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'export-modal';
+    m.innerHTML = '<div class="em-box"><div class="em-title">Lim disse til Claude (eller jeg leser localStorage <code>ypilot.tuning</code> direkte):</div><textarea class="em-text" readonly></textarea><button class="em-close">Lukk</button></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if (e.target === m || (e.target.className || '').includes('em-close')) m.style.display = 'none'; });
+  }
+  m.querySelector('.em-text').value = exportTuning();
+  m.style.display = 'flex';
+  const ta = m.querySelector('.em-text'); ta.focus(); ta.select();
+}
+
+// Fyller kart-velgeren med de kuraterte, embeddede kartene (Ekolos_4p + utvalgte XPilot).
+// De rå 130 XPilot-.map-ene er bevisst utelatt fra UI-et — mest støy (men ligger fortsatt
+// i maps/ + maps/playable-candidates.json for konvertering/testing). Alle embeddede er
+// store → single-player (scroll + minimap); skjules i fler-menneske-lokalt.
+function setupMapSelector(current) {
   const sel = document.getElementById('map-select');
   if (!sel) return;
   const aiOn = readAIOn();
@@ -1411,8 +1679,6 @@ async function setupMapSelector(current) {
     sel.appendChild(o);
   };
   addOpt('test', 'Testbane');
-  // Embeddede nytt-format-kart (TRII + konverterte XPilot) øverst. Alle er store →
-  // kun single-player (scroll + minimap); skjules i fler-menneske (samme regel som store XPilot-kart).
   if (window.EMBEDDED_MAPS) {
     Object.keys(window.EMBEDDED_MAPS).sort().forEach(k => {
       const m = window.EMBEDDED_MAPS[k];
@@ -1420,17 +1686,6 @@ async function setupMapSelector(current) {
       addOpt(k, `${m.name || k}  [${m.source || 'JSON'} ${m.cols}×${m.rows}]`);
     });
   }
-  try {
-    const list = await fetch('maps/index.json').then(r => r.json());
-    list
-      .filter(m => m.w && m.h && !isExcludedMap(m.file)
-                && (aiOn || isLocallyPlayable(m.w, m.h)))
-      .sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file))
-      .forEach(m => {
-        const big = !isLocallyPlayable(m.w, m.h) ? '  ▸stor' : '';
-        addOpt(m.file, `${m.name || m.file}  (${m.w}×${m.h})${big}`);
-      });
-  } catch (e) { console.warn('Fant ikke maps/index.json', e); }
   sel.addEventListener('change', () => {
     try { localStorage.setItem(MAP_KEY, sel.value); } catch (e) { /* privat modus */ }
     location.reload();
