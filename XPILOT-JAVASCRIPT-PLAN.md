@@ -445,6 +445,14 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
     LLM-enriching legges *oppå* dette — botene flyr ikke lenger blindt, men kan
     manøvrere/posisjonere som et menneske (og etter hvert bruke rakettstrålen som
     dytt/våpen, jf. Fase 3).
+  - **Rømme spawn-lommer (utsatt → enrichment):** på enkelte kart (f.eks.
+    `Arena.map`, «The Arena») sitter basene i innelukkede lommer (gulv under,
+    vegger/skråninger på sidene, åpning bare oppover). Den lokale heuristiske boten
+    klarer ikke finne veien UT — det krever rute-kunnskap om kartet (nettopp
+    «flyr-blindt»-gapet). Utsatt til enrichingen gir botene kart-bevissthet/ruter.
+    *Liten relatert bug å fikse separat:* AI-vegg-følerne sjekker bare `=== 'x'` og
+    er dermed blinde for skrå-ruter (`q/w/a/s`) som likevel er solide — bør behandle
+    skråninger som vegg i følerne.
   - **«Finn et godt sted å spawne»:** la LLM-enrichingen analysere kartgeometrien
     og sikre at hvert spawn-punkt har en **landing (flat vegg-topp) rett under seg**
     der det er mulig — så skip starter hvilende på en plattform og letter bevisst
