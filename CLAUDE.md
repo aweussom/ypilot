@@ -17,22 +17,32 @@ areal-skalert skip-antall), justerbar gravitasjon (slider, localStorage), drivst
 topper, **bot-multiplayer free-for-all med takeover** (menneske=Starfighter, bot=TIE;
 dø → overta dårligste bot, morf + frys + nedtelling), 3 liv → eliminert → siste vinner,
 **skjold** (drenerer drivstoff, absorberer, spretter av vegg), blast-push, AI med
-nødbrems. Alle justerbare verdier er samlet i `PHYSICS`/`AI`/`GAME` (TUNING-blokk øverst
-i `game.js`). Publisert via GitHub Pages (repo `aweussom/ypilot`).
+nødbrems, **stor-kart single-player** (scrolling-kamera som følger spilleren ved zoom 1
++ minimap nederst til høyre som viser hele banen og alle skip; små kart / fler-menneske
+beholder fit-til-skjerm). Alle justerbare verdier er samlet i `PHYSICS`/`AI`/`GAME`
+(TUNING-blokk øverst i `game.js`). Publisert via GitHub Pages (repo `aweussom/ypilot`).
 
-**NESTE OPPGAVE: stor-kart-støtte for single-player** — scrolling-kamera som følger
-menneskets skip + minimap i et hjørne som viser hele kartet + alle skip. Se memory
-`lokal-vs-nettverk-kart` (designet er bestemt). Deretter: lyd (gjenbruk Solstice-motor),
-radar, så «prettification» (Solstice-grafikk). `XPILOT-JAVASCRIPT-PLAN.md` har fasene;
-memory-filene har alle design-beslutninger og framtids-notater.
+Kart kan svartelistes i `EXCLUDED_MAPS` (kjent ødelagte i YPilot) — `dog1776.map` er
+ute. Takeover skjer kun når ≥2 skip står igjen (ellers vinner siste skip).
+
+**NESTE OPPGAVE: lyd** — gjenbruk Solstice-lydmotoren («soundbed» + SFX), se memory
+`audio-fra-solstice`. Deretter: radar, så «prettification» (Solstice-grafikk).
+`XPILOT-JAVASCRIPT-PLAN.md` har fasene; memory-filene har alle design-beslutninger og
+framtids-notater.
+
+> **Stor-kart-begrensning (kjent):** scroll-kameraet sentrerer momentant på skipet, så
+> på wrap-kart vises tomrom utenfor kartkanten (ingen toroidal dobbel-rendering ennå).
+> De fleste store kart har solid kant-vegg, så skipet når sjelden den ekte kanten.
+> Toroidal rendering er en framtidig forbedring.
 
 **YPilot** (arbeidskatalog/repo `jpilot`; localStorage-nøkler `jpilot.*` beholdes) er
 XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
 (Lunar Lander-slekt) med neon-wireframe-estetikk og lokal multiplayer på samme
 tastatur. Turboraketti-kart/-våpen er et bevisst utsatt lag (Fase 3).
 
-Prosjektet er en homage til XPilot-folka fra Universitetet i Tromsø og til den
-finske programmereren bak Turboraketti — derav norsk som gjennomgående språk.
+Prosjektet er en homage til XPilot-folka fra Universitetet i Tromsø og til
+**Heikki Kosola**, den finske programmereren bak Turboraketti (utgitt 1992) —
+derav norsk som gjennomgående språk.
 
 ## Bygg, kjør, test
 

@@ -277,6 +277,13 @@ function isLocallyPlayable(wTiles, hTiles) {
   return Math.max(wTiles, hTiles) <= MAX_LOCAL_DIM;
 }
 
+// Svartliste: kart som er kjent ødelagte i YPilot (kan fungere i ekte XPilot, men
+// vår parser/fysikk takler dem ikke). Utelates fra velgeren og avvises ved boot.
+const EXCLUDED_MAPS = new Set([
+  'xpilot-all-133-maps/dog1776.map',   // «Dog 1776» — fungerer ikke i YPilot
+]);
+function isExcludedMap(file) { return EXCLUDED_MAPS.has(file); }
+
 // Laster valgt kart (filnavn relativt til maps/), eller testbanen.
 async function loadMap(sel) {
   if (!sel || sel === 'test') return buildTestMap();
@@ -415,6 +422,124 @@ function renderMap(scene, map) {
     }
     fg.setBlendMode(Phaser.BlendModes.ADD);
     fg.setDepth(0);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Minimap — vises kun i scroll-modus (store single-player-kart). Et lite kart i
+ * hjørnet som viser HELE banen + alle skip som prikker (spilleren uthevet), pluss
+ * en ramme som markerer hva hovedkameraet ser akkurat nå. Tegnet med Graphics
+ * (scrollFactor 0 → festet til skjermen). Forutsetter zoom 1 (scroll-modus), så
+ * skjerm-px = verdens-px og plasseringen blir presis.
+ * ------------------------------------------------------------------------- */
+const MINIMAP = {
+  maxW: 220, maxH: 220, margin: 12,
+  bg: 0x0a0f1e, bgAlpha: 0.55,
+  dotPlayer: 5, dotShip: 3, dotBullet: 1.2,
+};
+
+class Minimap {
+  constructor(scene, map) {
+    this.scene = scene;
+    this.map = map;
+
+    // Behold kartets bredde/høyde-forhold, pass inn i maks-boksen.
+    const aspect = map.widthPx / map.heightPx;
+    let w = MINIMAP.maxW, h = MINIMAP.maxW / aspect;
+    if (h > MINIMAP.maxH) { h = MINIMAP.maxH; w = MINIMAP.maxH * aspect; }
+    this.w = w; this.h = h;
+    this.scale = w / map.widthPx;   // verdens-px → minimap-px
+
+    // Tre lag: bakgrunn (normal blend, demper), vegger (ADD-neon, statisk),
+    // prikker (ADD, tegnes på nytt hver frame).
+    this.frameGfx = scene.add.graphics().setScrollFactor(0).setDepth(20);
+    this.wallGfx = scene.add.graphics().setScrollFactor(0).setDepth(21)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.dotGfx = scene.add.graphics().setScrollFactor(0).setDepth(22)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.drawStatic();
+    this.reposition();
+  }
+
+  // Bakgrunn + vegger + fuel — tegnes én gang (statisk). Vegger slås sammen til
+  // horisontale kjøringer per rad for å holde antall draw-kall nede på store kart.
+  drawStatic() {
+    const s = this.scale, bs = this.map.blockSize;
+
+    this.frameGfx.clear();
+    this.frameGfx.fillStyle(MINIMAP.bg, MINIMAP.bgAlpha);
+    this.frameGfx.fillRect(0, 0, this.w, this.h);
+
+    const g = this.wallGfx;
+    g.clear();
+    g.fillStyle(COLORS.wall, 0.85);
+    for (let r = 0; r < this.map.rows; r++) {
+      let runStart = -1;
+      for (let c = 0; c <= this.map.cols; c++) {
+        const wall = c < this.map.cols && this.map.tiles[r][c] === 'x';
+        if (wall && runStart === -1) runStart = c;
+        else if (!wall && runStart !== -1) {
+          g.fillRect(runStart * bs * s, r * bs * s, (c - runStart) * bs * s, bs * s);
+          runStart = -1;
+        }
+      }
+    }
+    // Fuel-stasjoner som små grønne prikker.
+    if (this.map.fuelStations) {
+      g.fillStyle(FUEL_COLOR, 0.9);
+      for (const f of this.map.fuelStations) g.fillCircle(f.x * s, f.y * s, 2);
+    }
+    // Neon-ramme rundt minimapet.
+    g.lineStyle(1, COLORS.wall, 0.9);
+    g.strokeRect(0, 0, this.w, this.h);
+  }
+
+  // Plasser de tre lagene nederst til høyre (kalles ved oppstart + resize).
+  reposition() {
+    const ox = viewW() - this.w - MINIMAP.margin;
+    const oy = viewH() - this.h - MINIMAP.margin;
+    this.frameGfx.setPosition(ox, oy);
+    this.wallGfx.setPosition(ox, oy);
+    this.dotGfx.setPosition(ox, oy);
+  }
+
+  // Dynamisk lag: kamera-utsyn-ramme, kuler, skip-prikker. Tegnes hver frame.
+  update() {
+    const s = this.scale, g = this.dotGfx;
+    g.clear();
+
+    // Hva hovedkameraet ser nå (klampet til minimapet, kan wrappe utenfor).
+    const v = this.scene.cameras.main.worldView;
+    const vx = Math.max(0, Math.min(this.w, v.x * s));
+    const vy = Math.max(0, Math.min(this.h, v.y * s));
+    const vr = Math.max(0, Math.min(this.w, (v.x + v.width) * s));
+    const vb = Math.max(0, Math.min(this.h, (v.y + v.height) * s));
+    g.lineStyle(1, 0xffffff, 0.35);
+    g.strokeRect(vx, vy, vr - vx, vb - vy);
+
+    // Kuler — bittesmå prikker i eierens farge.
+    for (const b of this.scene.bullets) {
+      if (b.dead || !b.sprite) continue;
+      g.fillStyle(b.owner.color, 0.7);
+      g.fillCircle(b.sprite.x * s, b.sprite.y * s, MINIMAP.dotBullet);
+    }
+
+    // Skip — alle levende (eller midt i respawn) tegnes; spilleren uthevet med ring.
+    const player = this.scene.humanShips[0];
+    for (const ship of this.scene.ships) {
+      if (ship.eliminated) continue;
+      const px = ship.x * s, py = ship.y * s;
+      if (ship === player) {
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(px, py, MINIMAP.dotPlayer);
+        g.lineStyle(1.5, ship.color, 1);
+        g.strokeCircle(px, py, MINIMAP.dotPlayer + 2);
+      } else {
+        g.fillStyle(ship.color, ship.alive ? 0.95 : 0.4);
+        g.fillCircle(px, py, MINIMAP.dotShip);
+      }
+    }
   }
 }
 
@@ -864,16 +989,6 @@ class GameScene extends Phaser.Scene {
   create() {
     this.map = MAP;
 
-    // Kamera: zoom for å vise HELE kartet, sentrert og så stort som mulig.
-    // Følger vindusstørrelsen (RESIZE), så kartet fyller skjermen.
-    const fitCamera = () => {
-      const cam = this.cameras.main;
-      cam.setZoom(FIT * Math.min(cam.width / this.map.widthPx, cam.height / this.map.heightPx));
-      cam.centerOn(this.map.widthPx / 2, this.map.heightPx / 2);
-    };
-    fitCamera();
-    this.scale.on('resize', fitCamera);
-
     makeTextures(this);
     renderMap(this, this.map);
 
@@ -902,8 +1017,7 @@ class GameScene extends Phaser.Scene {
     // (tastatur), resten bots. AI-toggle PÅ = bare P1 (mot bots).
     // P1: W gass / A,D rotér / S skjold (Fase 2) / SPACE fyr.
     // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
-    let aiOn = true;
-    try { aiOn = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
+    const aiOn = readAIOn();
     // Antall skip skaleres med kartets størrelse (større kart → flere skip).
     const area = this.map.cols * this.map.rows;
     const shipCount = Math.max(GAME.minShips, Math.min(GAME.maxShips, Math.round(area / GAME.tilesPerShip)));
@@ -935,6 +1049,12 @@ class GameScene extends Phaser.Scene {
     // Skipet hvert menneske styrer akkurat nå (endres ved takeover).
     this.humanShips = this.ships.slice(0, humanCount);
 
+    // Kamera-modus. Fler-menneske-lokalt OG små single-player-kart: fit-hele-kartet
+    // (zoom så hele banen vises). Single-player (1 menneske) på STORT kart: scrolling-
+    // kamera (zoom 1) som følger menneskets skip + minimap. Se memory lokal-vs-nettverk-kart.
+    this.scrollMode = humanCount === 1 && !isLocallyPlayable(this.map.cols, this.map.rows);
+    this.setupCamera();
+
     // Kollisjoner. Skip-mot-skip: alle par (begge dør). Bullet-mot-skip: per skip.
     for (let i = 0; i < this.ships.length; i++)
       for (let j = i + 1; j < this.ships.length; j++)
@@ -960,14 +1080,50 @@ class GameScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-R', () => { if (this.over) location.reload(); });
   }
 
+  // Stiller kameraet etter modus. Fit: zoom for å vise hele kartet, sentrert.
+  // Scroll: zoom 1 (skip i normal størrelse), kameraet sentreres på spilleren hver
+  // frame i update() + et minimap i hjørnet viser hele kartet og alle skip.
+  setupCamera() {
+    const cam = this.cameras.main;
+    if (this.scrollMode) {
+      cam.setZoom(1);
+      const t = this.humanShips[0];
+      if (t) cam.centerOn(t.x, t.y);
+      this.minimap = new Minimap(this, this.map);
+      this.scale.on('resize', () => this.minimap && this.minimap.reposition());
+    } else {
+      const fit = () => {
+        cam.setZoom(FIT * Math.min(cam.width / this.map.widthPx, cam.height / this.map.heightPx));
+        cam.centerOn(this.map.widthPx / 2, this.map.heightPx / 2);
+      };
+      fit();
+      this.scale.on('resize', fit);
+    }
+  }
+
+  // Sentrer scroll-kameraet på menneskets nåværende skip (endres ved takeover). Sentrering
+  // er momentan så et wrap ser riktig ut (verden wrappet → utsynet wrapper også).
+  updateCamera() {
+    if (!this.scrollMode) return;
+    const t = this.humanShips[0];
+    if (t) this.cameras.main.centerOn(t.x, t.y);
+    if (this.minimap) this.minimap.update();
+  }
+
   onEliminated(ship) {
     ship.marker.setVisible(false);
     ship.countText.setVisible(false);
 
     // Var et menneske eliminert? Ta over boten som gjør det DÅRLIGST (færrest kills,
     // så færrest liv) — Counter-Strike-stil, ingen poeng. Free shield ved overtakelse.
+    //
+    // MEN takeover skjer kun hvis det fortsatt er en reell kamp igjen, dvs. ≥2 skip
+    // på banen etter at dette døde. Er det bare ÉTT skip igjen, har det skipet vunnet —
+    // å overta det ville feilaktig gi spilleren seieren (rapportert quirk: 1 AI + meg →
+    // jeg dør → takeover av siste AI → «jeg vant»). `ship` er allerede eliminert her.
+    const survivors = this.ships.filter(s => !s.eliminated);
     const hi = this.humanShips.indexOf(ship);
-    if (hi !== -1) {
+    if (hi !== -1 && survivors.length >= 2) {
       const bots = this.ships.filter(s => s.isBot && !s.eliminated);
       bots.sort((a, b) => (a.kills - b.kills) || (a.lives - b.lives));
       const bot = bots[0];
@@ -985,6 +1141,8 @@ class GameScene extends Phaser.Scene {
       } else {
         this.humanShips[hi] = null;           // ingen bot å overta → ute
       }
+    } else if (hi !== -1) {
+      this.humanShips[hi] = null;             // ingen reell kamp igjen → siste skip vinner
     }
     this.checkWin();
   }
@@ -1036,6 +1194,8 @@ class GameScene extends Phaser.Scene {
       if (b.dead) this.bullets.splice(i, 1);
     }
 
+    this.updateCamera();
+
     // HUD bundet til hvert menneskes NÅVÆRENDE skip (endres ved takeover).
     for (let i = 0; i < 2; i++) {
       const score = i === 0 ? this.hudP1 : this.hudP2;
@@ -1066,9 +1226,13 @@ const MAP_KEY = 'jpilot.map';
 async function boot() {
   let sel = 'test';
   try { sel = localStorage.getItem(MAP_KEY) || 'test'; } catch (e) { /* privat modus */ }
+  const aiOn = readAIOn();
   MAP = await loadMap(sel);
-  // Falt et lagret kart utenfor lokal-filteret (for stort) eller mangler? Bruk testbanen.
-  if (sel !== 'test' && !isLocallyPlayable(MAP.cols, MAP.rows)) {
+  // Lagret kart ekskludert (kjent ødelagt), eller for stort for valgt modus? → testbane.
+  // Store kart er OK i single-player (AI på = 1 menneske → scroll-kamera + minimap),
+  // men ikke i fler-menneske-lokalt (2 spillere = fit-til-skjerm, krever lite kart).
+  const tooBig = !isLocallyPlayable(MAP.cols, MAP.rows) && !aiOn;
+  if (sel !== 'test' && (isExcludedMap(sel) || tooBig)) {
     MAP = buildTestMap(); sel = 'test';
     try { localStorage.setItem(MAP_KEY, 'test'); } catch (e) { /* privat modus */ }
   }
@@ -1086,10 +1250,18 @@ async function boot() {
   });
 }
 
-// Fyller kart-velgeren fra manifestet (kun lokalt spillbare kart), reload ved valg.
+// Leser AI-toggle (single-player mot bots). PÅ = 1 menneske → store kart låses opp.
+function readAIOn() {
+  try { return localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { return true; }
+}
+
+// Fyller kart-velgeren fra manifestet, reload ved valg. I single-player (AI på) vises
+// ALLE kart — store får scroll-kamera + minimap. I fler-menneske-lokalt (AI av) vises
+// kun små kart (fit-til-skjerm). Svartlistede kart utelates uansett.
 async function setupMapSelector(current) {
   const sel = document.getElementById('map-select');
   if (!sel) return;
+  const aiOn = readAIOn();
   const addOpt = (val, label) => {
     const o = document.createElement('option');
     o.value = val; o.textContent = label;
@@ -1100,9 +1272,13 @@ async function setupMapSelector(current) {
   try {
     const list = await fetch('maps/index.json').then(r => r.json());
     list
-      .filter(m => m.w && m.h && isLocallyPlayable(m.w, m.h))
+      .filter(m => m.w && m.h && !isExcludedMap(m.file)
+                && (aiOn || isLocallyPlayable(m.w, m.h)))
       .sort((a, b) => (a.name || a.file).localeCompare(b.name || b.file))
-      .forEach(m => addOpt(m.file, `${m.name || m.file}  (${m.w}×${m.h})`));
+      .forEach(m => {
+        const big = !isLocallyPlayable(m.w, m.h) ? '  ▸stor' : '';
+        addOpt(m.file, `${m.name || m.file}  (${m.w}×${m.h})${big}`);
+      });
   } catch (e) { console.warn('Fant ikke maps/index.json', e); }
   sel.addEventListener('change', () => {
     try { localStorage.setItem(MAP_KEY, sel.value); } catch (e) { /* privat modus */ }
@@ -1114,8 +1290,7 @@ async function setupMapSelector(current) {
 function setupAIToggle() {
   const cb = document.getElementById('ai-toggle');
   if (!cb) return;
-  let on = true; try { on = localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { /* privat modus */ }
-  cb.checked = on;
+  cb.checked = readAIOn();
   cb.addEventListener('change', () => {
     try { localStorage.setItem('jpilot.ai', cb.checked ? 'on' : 'off'); } catch (e) { /* privat modus */ }
     location.reload();
