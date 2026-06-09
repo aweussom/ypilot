@@ -49,6 +49,13 @@ toppfart skalerer MED tank — full tank = `maxSpeed`, tom = `maxSpeed·(1−fue
 ekte fysikk med vilje: nyspawnet (full tank) er raskest → kommer unna campere. (3) Spawn-skjold
 `PHYSICS.spawnInvuln` økt til ~2s, tunbar i Kamp. (2)+(3) er mest for framtidig menneske-MP.
 
+**Overlev-for-å-vinne + blast ✅:** (1) Siste skip vinner IKKE på flekken — det må overleve et
+vindu (`PHYSICS.winSurviveTime` ~2.5s, tunbar «Overlev-tid» i Kamp) mens kuler i lufta fortsatt
+kan drepe → uavgjort (TurboRaketti II-følelse). Avgjøres i `GameScene.update`; HUD viser
+«… — OVERLEV! N.Ns». (2) Blast-push ved eksplosjon (`die()`) slenger nærliggende skip — ofte
+inn i vegger der vegg-mekanikken tar fuel/skjold/liv (synergi med `wallLethalSpeed`). Tunbart:
+«Blast-dytt» (`blastForce`) + «Blast-vidde» (`blastRadius`) i Kamp.
+
 **Vegg-baking ✅ (branch `perf/dynamic-texture-bake`):** organiske vegg-lag bakes til ÉN
 `DynamicTexture` (`scene.wallImage`, vist som én ADD-quad) i stedet for å re-tessellere
 linjesegmenter hver frame. Geometri-capet er fjernet ved baking → full Avrunding/Organisk/

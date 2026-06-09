@@ -38,12 +38,16 @@ const PHYSICS = {
   shipHP:       5,      // treff skipet tåler før det dør (Turboraketti-stil)
   respawnDelay: 180,    // frames (~3s)
   spawnInvuln:  120,    // frames (~2s) free shield etter spawn/takeover (anti spawn-camp) [tunbar, Kamp]
+  winSurviveTime: 150,  // frames (~2.5s) vinneren må OVERLEVE etter at siste motstander dør —
+                        // kuler i lufta kan fortsatt drepe → uavgjort (TurboRaketti II). 0 = vinn
+                        // straks (gammel oppførsel). [tunbar, Kamp]
   startLives:   3,      // liv før game over
   takeoverPause: 60,    // frames (~1s) skipet «fryser» m/ nedtelling når du tar over en bot
   // — Eksplosjon / blast-push —
   explodeCount: 28,     // partikler i eksplosjonen
-  blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker)
-  blastForce:   6,      // px/frame impuls ved episenter
+  blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker) [tunbar, Kamp]
+  blastForce:   8,      // px/frame impuls ved episenter — nok til å slenge nærliggende skip inn i
+                        // vegger (→ død/fuel-dren via vegg-mekanikken). [tunbar, Kamp]
   // — Jeteksos —
   exhaustSpeed:  90,    // partikkel-fart bakover
   exhaustSpread: 40,    // sideveis spredning
@@ -1469,7 +1473,8 @@ class Ship {
     this.scene.explosion.explode(PHYSICS.explodeCount, this.x, this.y);
 
     // Blast-push: eksplosjonen dytter nærliggende levende skip radielt vekk (avtar med
-    // avstand). MER dytt om motstander har skjold på (Fase 2 — `shielded` finnes ikke ennå).
+    // avstand) — ofte rett inn i en vegg, der vegg-mekanikken tar fuel/skjold/liv. DOBBELT
+    // dytt om motstander har skjold på (skjoldet absorberer ikke impulsen, bare vegg-treffet).
     const map = this.scene.map;
     for (const other of this.scene.ships) {
       if (other === this || !other.alive) continue;
@@ -1614,6 +1619,8 @@ class GameScene extends Phaser.Scene {
     this.livesP2 = document.getElementById('lives-p2');
     this.remainingEl = document.getElementById('remaining');
     this.over = false;
+    this.winTimer = 0;            // >0 = overlevelses-vindu pågår (siste skip må overleve)
+    this.pendingWinner = null;
 
     // R for ny runde etter game over.
     this.input.keyboard.on('keydown-R', () => { if (this.over) location.reload(); });
@@ -1687,9 +1694,17 @@ class GameScene extends Phaser.Scene {
   }
 
   checkWin() {
-    if (this.over) return;
+    if (this.over || this.winTimer > 0) return;
     const left = this.ships.filter(s => !s.eliminated);
-    if (left.length <= 1) this.gameOver(left[0] || null);
+    if (left.length === 0) { this.gameOver(null); return; }   // alle ute samtidig → uavgjort
+    if (left.length === 1) {
+      // Siste motstander eliminert — men i TurboRaketti II måtte vinneren OVERLEVE etterskjelvet:
+      // kuler i lufta kunne fortsatt drepe → uavgjort. Start et overlevelses-vindu i stedet for å
+      // vinne på flekken. Avgjøres i update() (vinn ved utløp, uavgjort om vinneren dør i vinduet).
+      if (PHYSICS.winSurviveTime <= 0) { this.gameOver(left[0]); return; }
+      this.pendingWinner = left[0];
+      this.winTimer = PHYSICS.winSurviveTime;
+    }
   }
 
   gameOver(winner) {
@@ -1749,6 +1764,17 @@ class GameScene extends Phaser.Scene {
       if (b.dead) this.bullets.splice(i, 1);
     }
 
+    // Overlevelses-vindu (TurboRaketti II): siste skip vinner først om det lever vinduet ut.
+    // Dør det av en kule i lufta i mellomtiden → uavgjort.
+    if (this.winTimer > 0) {
+      if (!this.pendingWinner.alive || this.pendingWinner.eliminated) {
+        this.winTimer = 0; this.gameOver(null);          // truffet i etterskjelvet → uavgjort
+      } else {
+        this.winTimer -= dtScale;
+        if (this.winTimer <= 0) this.gameOver(this.pendingWinner);
+      }
+    }
+
     this.updateCamera();
 
     // HUD bundet til hvert menneskes NÅVÆRENDE skip (endres ved takeover).
@@ -1768,7 +1794,11 @@ class GameScene extends Phaser.Scene {
         lives.textContent = '';
       }
     }
-    if (this.remainingEl) this.remainingEl.textContent = 'Skip igjen: ' + this.ships.filter(s => !s.eliminated).length;
+    if (this.remainingEl) {
+      this.remainingEl.textContent = this.winTimer > 0
+        ? this.pendingWinner.label + ' — OVERLEV! ' + (this.winTimer / 60).toFixed(1) + 's'
+        : 'Skip igjen: ' + this.ships.filter(s => !s.eliminated).length;
+    }
   }
 }
 
@@ -1859,8 +1889,10 @@ const TUNING = [
   { g: 'Kamp',      key: 'shieldBounce',  label: 'Skjold-sprett', min: 0.2,  max: 1,    step: 0.05,  get: () => PHYSICS.shieldBounce, set: v => PHYSICS.shieldBounce = +v },
   { g: 'Kamp',      key: 'wallLethal',    label: 'Dødelig fart',  min: 2,    max: 16,   step: 0.5,   get: () => PHYSICS.wallLethalSpeed, set: v => PHYSICS.wallLethalSpeed = +v },
   { g: 'Kamp',      key: 'spawnInvuln',   label: 'Spawn-skjold',  min: 30,   max: 240,  step: 15,    get: () => PHYSICS.spawnInvuln,  set: v => PHYSICS.spawnInvuln = +v },
+  { g: 'Kamp',      key: 'winSurvive',    label: 'Overlev-tid',   min: 0,    max: 360,  step: 30,    get: () => PHYSICS.winSurviveTime, set: v => PHYSICS.winSurviveTime = +v },
   { g: 'Kamp',      key: 'bounceKick',    label: 'Sprett-boost',  min: 1,    max: 2.5,  step: 0.05,  get: () => PHYSICS.bounceKick,   set: v => PHYSICS.bounceKick = +v },
   { g: 'Kamp',      key: 'blastForce',    label: 'Blast-dytt',    min: 0,    max: 12,   step: 0.5,   get: () => PHYSICS.blastForce,   set: v => PHYSICS.blastForce = +v },
+  { g: 'Kamp',      key: 'blastRadius',   label: 'Blast-vidde',   min: 32,   max: 320,  step: 16,    get: () => PHYSICS.blastRadius,  set: v => PHYSICS.blastRadius = +v },
   { g: 'Kamp',      key: 'bulletSpeed',   label: 'Kulefart',      min: 6,    max: 24,   step: 1,     get: () => PHYSICS.bulletSpeed,  set: v => PHYSICS.bulletSpeed = +v },
   { g: 'Kamp',      key: 'fireCooldown',  label: 'Skyte-pause',   min: 4,    max: 30,   step: 1,     get: () => PHYSICS.fireCooldown, set: v => PHYSICS.fireCooldown = +v },
   // — Visuelt —
