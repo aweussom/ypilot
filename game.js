@@ -47,6 +47,9 @@ const PHYSICS = {
   fuelThrust:   0.18,   // drivstoff/frame ved gass
   fuelShot:     2,      // drivstoff per skudd
   fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
+  // — Skjold —
+  shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
+  shieldBounce: 0.7,    // fart beholdt ved skjold-sprett mot vegg
   // — Landing —
   groundFriction: 0.85, // vx beholdt per frame ved bakke-kontakt
 };
@@ -363,6 +366,12 @@ function makeTextures(scene) {
   g.fillStyle(0xffffff, 0.5); g.fillCircle(4, 4, 4);
   g.fillStyle(0xffffff, 1.0); g.fillCircle(4, 4, 2);
   g.generateTexture('spark', 8, 8);
+  g.clear();
+
+  // Skjold-ring (vises rundt skipet når skjold er oppe).
+  g.lineStyle(2, 0xffffff, 1);
+  g.strokeCircle(22, 22, 19);
+  g.generateTexture('shield', 44, 44);
 
   g.destroy();
 }
@@ -588,6 +597,7 @@ class Ship {
     this.fireTimer = 0;
     this.respawnTimer = 0;
     this.takeoverTimer = 0;
+    this.shielded = false;
 
     // Form: menneske = Starfighter, bot = TIE-fighter (byttes ved takeover).
     this.texKey = this.isBot ? 'ship-bot' : 'ship-human';
@@ -622,6 +632,10 @@ class Ship {
       color: '#' + this.color.toString(16).padStart(6, '0'),
     }).setOrigin(0.5).setDepth(7).setVisible(false);
 
+    // Skjold-ring rundt skipet (vises mens skjold er oppe).
+    this.shieldGfx = scene.add.image(this.spawn.x, this.spawn.y, 'shield')
+      .setTint(0x66ccff).setBlendMode(Phaser.BlendModes.ADD).setDepth(6).setVisible(false);
+
     this.applySpawn();
   }
 
@@ -639,8 +653,10 @@ class Ship {
     this.invuln = PHYSICS.spawnInvuln;
     this.fuel = PHYSICS.fuelMax;
     this.hp = PHYSICS.shipHP;
+    this.shielded = false;
     this.marker.setVisible(false);
     this.countText.setVisible(false);
+    this.shieldGfx.setVisible(false);
   }
 
   update(dtScale) {
@@ -679,6 +695,11 @@ class Ship {
     }
 
     const input = this.input();
+
+    // Skjold: hold-tast, krever drivstoff. Dreneres mens oppe; blokkerer egen skyting,
+    // absorberer kuler, gjør deg uskadelig (men spretter av vegger). Se die()/onBulletHit.
+    this.shielded = !!input.shield && this.fuel > 0;
+    if (this.shielded) this.fuel -= PHYSICS.shieldDrain * dtScale;
 
     // Rotasjon
     if (input.left)  this.angle -= PHYSICS.turnRate * dtScale;
@@ -731,9 +752,17 @@ class Ship {
       this.thrust.emitting = false;
     }
 
-    // Skyting — krever drivstoff.
+    // Skjold-ring (pulserende).
+    if (this.shielded) {
+      const t = this.scene.time.now;
+      this.shieldGfx.setPosition(this.x, this.y).setVisible(true).setAlpha(0.55 + 0.3 * Math.sin(t * 0.012));
+    } else {
+      this.shieldGfx.setVisible(false);
+    }
+
+    // Skyting — krever drivstoff, og kan ikke skyte med skjold oppe.
     this.fireTimer -= dtScale;
-    if (input.fire && this.fireTimer <= 0 && this.fuel >= PHYSICS.fuelShot) {
+    if (input.fire && !this.shielded && this.fireTimer <= 0 && this.fuel >= PHYSICS.fuelShot) {
       this.fire();
       this.fuel -= PHYSICS.fuelShot;
       this.fireTimer = PHYSICS.fireCooldown;
@@ -757,7 +786,16 @@ class Ship {
     // nedstigning på en flat vegg-topp rett under → hvil (Lunar Lander-stil).
     const wmap = this.scene.map;
     if (tileAt(wmap, this.x, this.y) === 'x') {
-      this.die();
+      if (this.shielded || this.invuln > 0) {
+        // Skjold / free-shield: sprett tilbake ut av veggen i stedet for å dø.
+        this.vx = -this.vx * PHYSICS.shieldBounce;
+        this.vy = -this.vy * PHYSICS.shieldBounce;
+        this.sprite.x += this.vx * dtScale * 1.5;
+        this.sprite.y += this.vy * dtScale * 1.5;
+        if (this.shielded) this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;   // ekstra dren ved treff
+      } else {
+        this.die();
+      }
     } else if (this.vy >= 0) {
       const topBelow = (Math.floor(this.y / wmap.blockSize) + 1) * wmap.blockSize;
       if (tileAt(wmap, this.x, topBelow + 1) === 'x'
@@ -780,7 +818,7 @@ class Ship {
   }
 
   die() {
-    if (!this.alive || this.invuln > 0) return;
+    if (!this.alive || this.invuln > 0 || this.shielded) return;
     this.alive = false;
     this.deaths++;
     this.lives -= 1;
@@ -976,7 +1014,7 @@ class GameScene extends Phaser.Scene {
     const ship   = shipSprite.getData('ship');
     if (!bullet || !ship || bullet.dead || !ship.alive) return;
     if (bullet.owner === ship) return;             // egen kule treffer ikke egen eier
-    if (ship.invuln > 0) { bullet.destroy(); return; }   // free shield absorberer
+    if (ship.invuln > 0 || ship.shielded) { bullet.destroy(); return; }   // skjold/free-shield absorberer
 
     bullet.destroy();
     ship.hp -= PHYSICS.shotDamage;                 // skip tåler flere treff (Turboraketti-stil)
