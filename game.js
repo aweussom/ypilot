@@ -147,6 +147,7 @@ let DETAIL = 0.02;         // fBm-frekvens — høyere = tettere/mer ruglete org
 let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
 let MYCEL = 0.7;           // mycel-fyll: glødende forgrenet vene-nett inni veggene (New, 0 = av)
 let TRI_FILL = 0.6;        // trekant-fyll av solide soner i Trad-look (0 = av)
+let BEVEL = 0.3;           // Trad: 45°-bevel av skarpe konvekse hjørner (andel av blokk, 0 = av)
 let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
 function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(6, Math.max(0, v)); }
 function readRound() { return ROUNDING; }
@@ -778,16 +779,30 @@ function rebuildNeonWalls(scene, rounding) {
     };
   } else {
     const bs = map.blockSize;
+    // KONVEKSE hjørner (to åpne sider møtes) kuttes med en 45°-bevel → mindre blokkete, matcher
+    // XPilots slope-tiles (s/w/a/q). `b` = kuttlengde (BEVEL·blokk, 0 = skarpe hjørner som før).
+    // Kun visuelt — kollisjon er fortsatt rute-basert (firkant), så bevelen holdes konservativ
+    // (kuttet ER fortsatt solid for kollisjon; skipet stopper litt før den visuelle skråningen).
+    const b = Math.max(0, Math.min(0.5, BEVEL)) * bs;
     drawInto = (g, w, color, alpha) => {
       g.lineStyle(w, color, alpha);
       for (let r = 0; r < map.rows; r++)
         for (let c = 0; c < map.cols; c++) {
           if (map.tiles[r][c] !== 'x') continue;
           const x = c * bs, y = r * bs;
-          if (!isWall(map, c, r - 1)) g.lineBetween(x, y, x + bs, y);
-          if (!isWall(map, c, r + 1)) g.lineBetween(x, y + bs, x + bs, y + bs);
-          if (!isWall(map, c - 1, r)) g.lineBetween(x, y, x, y + bs);
-          if (!isWall(map, c + 1, r)) g.lineBetween(x + bs, y, x + bs, y + bs);
+          const oU = !isWall(map, c, r - 1), oD = !isWall(map, c, r + 1),
+                oL = !isWall(map, c - 1, r), oR = !isWall(map, c + 1, r);
+          // Konveks = begge tilstøtende sider åpne. b=0 → ingen bevel.
+          const TL = b > 0 && oU && oL, TR = b > 0 && oU && oR,
+                BL = b > 0 && oD && oL, BR = b > 0 && oD && oR;
+          if (oU) g.lineBetween(x + (TL ? b : 0), y, x + bs - (TR ? b : 0), y);            // topp
+          if (oD) g.lineBetween(x + (BL ? b : 0), y + bs, x + bs - (BR ? b : 0), y + bs);  // bunn
+          if (oL) g.lineBetween(x, y + (TL ? b : 0), x, y + bs - (BL ? b : 0));            // venstre
+          if (oR) g.lineBetween(x + bs, y + (TR ? b : 0), x + bs, y + bs - (BR ? b : 0));  // høyre
+          if (TL) g.lineBetween(x + b, y, x, y + b);                  // bevel-diagonaler (45°)
+          if (TR) g.lineBetween(x + bs - b, y, x + bs, y + b);
+          if (BL) g.lineBetween(x + b, y + bs, x, y + bs - b);
+          if (BR) g.lineBetween(x + bs - b, y + bs, x + bs, y + bs - b);
         }
     };
   }
@@ -2088,6 +2103,7 @@ const TUNING = [
   { g: 'Visuelt',   key: 'glow',          label: 'Glød',          min: 0,    max: 4,    step: 0.1,   get: () => GLOW_STRENGTH,        set: v => { GLOW_STRENGTH = +v; if (GAME_SCENE && GAME_SCENE.glowFilter) GAME_SCENE.glowFilter.outerStrength = +v; } },
   { g: 'Visuelt',   key: 'mycel',         label: 'Mycel',         min: 0,    max: 2,    step: 0.1,   get: () => MYCEL,                set: v => { MYCEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'triFill',       label: 'Trekanter',     min: 0,    max: 2,    step: 0.1,   get: () => TRI_FILL,             set: v => { TRI_FILL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'bevel',         label: 'Bevel',         min: 0,    max: 0.5,  step: 0.05,  get: () => BEVEL,                set: v => { BEVEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
 ];
 
 // Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).
