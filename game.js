@@ -14,7 +14,8 @@
  * ═══════════════════════════════════════════════════════════════════════════ */
 const PHYSICS = {
   // — Bevegelse —
-  thrustForce:  0.18,   // akselerasjon per frame ved full gass
+  thrustForce:  0.45,   // akselerasjon per frame ved full gass (må overgå gravitasjonen
+                        //   så skip kan klatre; gravitasjons-default 0.25–0.35, tak 0.50)
   turnRate:     0.065,  // rad per frame
   maxSpeed:     12,     // px/frame — hardt sikkerhetstak (clamp)
   drag:         0.99,   // hastighet beholdt per frame (<1 = drag → terminal-fart; 1 = vakuum)
@@ -62,6 +63,12 @@ const AI = {
   sensorAngle:  0.6,    // rad — venstre/høyre-føler
   avoidTurn:    0.8,    // rad — vri bort fra vegg
   keepDistance: 3,      // blokker — hold avstand til mål
+  // — Increment 2.5: prediktiv sikting, skjold-refleks, gravitasjons-kompensasjon —
+  // («target practice»-nivå: overlev og skyt fornuftig, ikke jakt aggressivt.)
+  leadMax:      75,     // frames — maks ledetid for prediktiv sikting (ellers sikt på nåposisjon)
+  gravComp:     1.0,    // 1 = full hovre-kompensasjon mot tyngdekraft (0 = ignorer gravitasjon)
+  shieldSpeed:  2.0,    // px/frame — skjold-refleks først når vi er på vei inn i vegg over denne farten
+  shieldFuelMin: 12,    // ikke skjold under dette drivstoff-nivået (spar til manøvrering)
 };
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
@@ -232,7 +239,12 @@ function parseMap(text, fallbackName) {
   // snuten VEKK fra CoG → OPP som standard. Kart med `gravitypoint` (tile-koord) gir et
   // punkt-CoG, og da peker snuten vekk fra det punktet.
   let cog = null;
-  const gp = (header.gravitypoint || '').match(/(-?\d+)\s*,\s*(-?\d+)/);
+  // `gravitypoint` brukes KUN som CoG når kartet faktisk er en punkt-kilde
+  // (`gravitypointsource: yes`). Mange kart (f.eks. The Blue Dragon) har en default
+  // `gravitypoint: 0,0` med `gravitypointsource: no` — der er gravitasjonen ensrettet
+  // (gravityangle), og 0,0 skal IKKE tolkes som tyngdepunkt (ga rare spawn-vinkler).
+  const gpSource = (header.gravitypointsource || '').toLowerCase() === 'yes';
+  const gp = gpSource ? (header.gravitypoint || '').match(/(-?\d+)\s*,\s*(-?\d+)/) : null;
   if (gp) cog = { x: (parseInt(gp[1], 10) + 0.5) * BLOCK, y: (parseInt(gp[2], 10) + 0.5) * BLOCK };
   const spawnAngle = (x, y) =>
     cog ? ((x === cog.x && y === cog.y) ? -Math.PI / 2 : Math.atan2(y - cog.y, x - cog.x))
@@ -649,12 +661,36 @@ function makeAIProvider(self, scene) {
     const bs = map.blockSize;
     const speed = Math.hypot(self.vx, self.vy);
 
+    // — Prediktiv sikting: kula arver skip-farten (se Ship.fire), så vi løser for
+    //   treffpunktet med RELATIV fart. |P + Vrel·t| = bulletSpeed·t → andregradslikning.
+    let leadBearing = bearing;
+    {
+      const vrx = (target.vx || 0) - self.vx, vry = (target.vy || 0) - self.vy;
+      const a = vrx * vrx + vry * vry - PHYSICS.bulletSpeed * PHYSICS.bulletSpeed;
+      const b = 2 * (dx * vrx + dy * vry);
+      const c = dx * dx + dy * dy;
+      let t = -1;
+      if (Math.abs(a) < 1e-4) {            // farten ~= kulefart: lineær
+        if (Math.abs(b) > 1e-6) t = -c / b;
+      } else {
+        const disc = b * b - 4 * a * c;
+        if (disc >= 0) {
+          const sq = Math.sqrt(disc);
+          const t1 = (-b - sq) / (2 * a), t2 = (-b + sq) / (2 * a);
+          t = Math.min(t1 > 0 ? t1 : Infinity, t2 > 0 ? t2 : Infinity);
+        }
+      }
+      if (t > 0 && t < AI.leadMax) leadBearing = Math.atan2(dy + vry * t, dx + vrx * t);
+    }
+
     // Nødbrems: er skipet på vei (FARTSRETNING, ikke bare nese) inn i en vegg snart?
-    let danger = false;
+    let danger = false, dangerClose = false;
     if (speed > 0.6) {
       const vang = Math.atan2(self.vy, self.vx);
       for (const ahead of [1.5, 3, 4.5]) {
-        if (tileAt(map, self.x + Math.cos(vang) * bs * ahead, self.y + Math.sin(vang) * bs * ahead) === 'x') { danger = true; break; }
+        if (tileAt(map, self.x + Math.cos(vang) * bs * ahead, self.y + Math.sin(vang) * bs * ahead) === 'x') {
+          danger = true; if (ahead <= 1.5) dangerClose = true; break;
+        }
       }
     }
 
@@ -663,18 +699,34 @@ function makeAIProvider(self, scene) {
       // Pek mot fartsretningen og brems (retro-thrust) — unngår vegg-selvmord.
       desired = Math.atan2(-self.vy, -self.vx);
       allowThrust = true;
+      // Skjold-refleks: rett før vegg-treff og for fort til å bremse → skjold = sprett, ikke død.
+      if (dangerClose && speed > AI.shieldSpeed && self.fuel > AI.shieldFuelMin) cmd.shield = true;
     } else {
-      desired = bearing;
-      // Vri unna hvis vegg rett foran nesen.
+      // Horisontal «vilje»: mot (predikert) mål hvis utenfor keepDistance.
+      const wantApproach = dist > bs * AI.keepDistance ? 1 : 0;
+      let tgtX = Math.cos(leadBearing) * wantApproach;
+      let tgtY = Math.sin(leadBearing) * wantApproach;
+
+      // Vegg rett foran nesen → styr unna (overstyrer den horisontale viljen med veer-retning).
       const look = bs * AI.lookahead;
       const wallAhead = tileAt(map, self.x + Math.cos(self.angle) * look, self.y + Math.sin(self.angle) * look) === 'x';
       if (wallAhead) {
         const leftWall = tileAt(map, self.x + Math.cos(self.angle - AI.sensorAngle) * look, self.y + Math.sin(self.angle - AI.sensorAngle) * look) === 'x';
-        desired = self.angle + (leftWall ? AI.avoidTurn : -AI.avoidTurn);
+        const veer = self.angle + (leftWall ? AI.avoidTurn : -AI.avoidTurn);
+        tgtX = Math.cos(veer); tgtY = Math.sin(veer);
       } else {
-        allowThrust = dist > bs * AI.keepDistance;
         allowFire = true;
       }
+
+      // Ønsket THRUST-retning = horisontal vilje + ALLTID en opp-komponent mot tyngdekraften.
+      // Tyngdekraften legges til vy hver frame; for å hovre må thrust-andelen opp være
+      // GRAVITY/thrustForce. Slik bobler boten oppe i stedet for å synke ned i gulvet — også
+      // mens den svinger unna en vegg. På gravitasjonsløse kart (GRAVITY≈0) faller dette
+      // tilbake til «sikt/styr mot målet».
+      const accX = tgtX;
+      const accY = tgtY - (GRAVITY > 0 ? (GRAVITY / PHYSICS.thrustForce) * AI.gravComp : 0);
+      if (accX === 0 && accY === 0) { desired = leadBearing; }   // hold stilling, bare sikt
+      else { desired = Math.atan2(accY, accX); allowThrust = true; }
     }
 
     // Roter korteste vei mot ønsket retning.
@@ -684,9 +736,14 @@ function makeAIProvider(self, scene) {
     if (da > AI.turnDeadzone) cmd.right = true;
     else if (da < -AI.turnDeadzone) cmd.left = true;
 
-    const aimed = Math.abs(da) < AI.aimedCone;
-    if (allowThrust && aimed) cmd.thrust = true;
-    if (allowFire && aimed && Math.abs(da) < AI.fireCone && dist < bs * AI.fireRange
+    if (allowThrust && Math.abs(da) < AI.aimedCone && self.fuel > 0) cmd.thrust = true;
+
+    // Skyt når NESEN er på linje med LEDE-pekingen (egen vinkel, uavhengig av thrust-retning),
+    // i rekkevidde, fri sikt, og ikke mens vi skjolder (skjold blokkerer skyting).
+    let df = leadBearing - self.angle;
+    while (df > Math.PI) df -= 2 * Math.PI;
+    while (df < -Math.PI) df += 2 * Math.PI;
+    if (allowFire && !cmd.shield && Math.abs(df) < AI.fireCone && dist < bs * AI.fireRange
         && lineClear(map, self.x, self.y, dx, dy, dist)) {
       cmd.fire = true;
     }
