@@ -33,6 +33,7 @@ const PHYSICS = {
   respawnDelay: 180,    // frames (~3s)
   spawnInvuln:  90,     // frames (~1.5s) free shield etter spawn/takeover (anti spawn-camp)
   startLives:   3,      // liv før game over
+  takeoverPause: 60,    // frames (~1s) skipet «fryser» m/ nedtelling når du tar over en bot
   // — Eksplosjon / blast-push —
   explodeCount: 28,     // partikler i eksplosjonen
   blastRadius:  128,    // px — eksplosjonens dytte-rekkevidde (~4 blokker)
@@ -326,16 +327,29 @@ function uprightOK(angle) {
 function makeTextures(scene) {
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
 
-  // Skip-wireframe (peker mot +x; rotasjon = vinkel direkte).
+  // Menneske-skip: Starfighter (pil) — peker mot +x, tydelig retning.
   g.lineStyle(2, 0xffffff, 1);
   g.beginPath();
-  g.moveTo(26, 16);   // nese
-  g.lineTo(11, 6);    // hekk topp
-  g.lineTo(15, 16);   // cockpit-innhakk
-  g.lineTo(11, 26);   // hekk bunn
-  g.lineTo(26, 16);
+  g.moveTo(28, 16);   // nese
+  g.lineTo(8, 7);     // hekk topp
+  g.lineTo(14, 16);   // cockpit-innhakk
+  g.lineTo(8, 25);    // hekk bunn
+  g.lineTo(28, 16);
   g.strokePath();
-  g.generateTexture('ship', 32, 32);
+  g.generateTexture('ship-human', 32, 32);
+  g.clear();
+
+  // Bot-skip: TIE-fighter — sentral pod + to vinge-paneler + liten nese-stubb (retning).
+  g.lineStyle(2, 0xffffff, 1);
+  g.strokeCircle(16, 16, 5);
+  g.beginPath();
+  g.moveTo(7, 4);   g.lineTo(7, 28);    // venstre panel
+  g.moveTo(25, 4);  g.lineTo(25, 28);   // høyre panel
+  g.moveTo(11, 16); g.lineTo(7, 16);    // strut venstre
+  g.moveTo(21, 16); g.lineTo(25, 16);   // strut høyre
+  g.moveTo(21, 16); g.lineTo(29, 16);   // nese-stubb (hinter retning)
+  g.strokePath();
+  g.generateTexture('ship-bot', 32, 32);
   g.clear();
 
   // Bullet — liten lysende prikk (ADD gir glød). Mindre enn skipet.
@@ -500,15 +514,35 @@ function makeAIProvider(self, scene) {
     const dist = best;
     const bearing = Math.atan2(dy, dx);
 
-    // Vegg-føler N blokker fram langs nesen.
-    const look = map.blockSize * AI.lookahead;
-    const wallAhead = tileAt(map, self.x + Math.cos(self.angle) * look, self.y + Math.sin(self.angle) * look) === 'x';
+    const bs = map.blockSize;
+    const speed = Math.hypot(self.vx, self.vy);
 
-    // Ønsket retning: mot mål, men vri bort fra vegg om den er rett foran.
-    let desired = bearing;
-    if (wallAhead) {
-      const leftWall = tileAt(map, self.x + Math.cos(self.angle - AI.sensorAngle) * look, self.y + Math.sin(self.angle - AI.sensorAngle) * look) === 'x';
-      desired = self.angle + (leftWall ? AI.avoidTurn : -AI.avoidTurn);
+    // Nødbrems: er skipet på vei (FARTSRETNING, ikke bare nese) inn i en vegg snart?
+    let danger = false;
+    if (speed > 0.6) {
+      const vang = Math.atan2(self.vy, self.vx);
+      for (const ahead of [1.5, 3, 4.5]) {
+        if (tileAt(map, self.x + Math.cos(vang) * bs * ahead, self.y + Math.sin(vang) * bs * ahead) === 'x') { danger = true; break; }
+      }
+    }
+
+    let desired, allowThrust = false, allowFire = false;
+    if (danger) {
+      // Pek mot fartsretningen og brems (retro-thrust) — unngår vegg-selvmord.
+      desired = Math.atan2(-self.vy, -self.vx);
+      allowThrust = true;
+    } else {
+      desired = bearing;
+      // Vri unna hvis vegg rett foran nesen.
+      const look = bs * AI.lookahead;
+      const wallAhead = tileAt(map, self.x + Math.cos(self.angle) * look, self.y + Math.sin(self.angle) * look) === 'x';
+      if (wallAhead) {
+        const leftWall = tileAt(map, self.x + Math.cos(self.angle - AI.sensorAngle) * look, self.y + Math.sin(self.angle - AI.sensorAngle) * look) === 'x';
+        desired = self.angle + (leftWall ? AI.avoidTurn : -AI.avoidTurn);
+      } else {
+        allowThrust = dist > bs * AI.keepDistance;
+        allowFire = true;
+      }
     }
 
     // Roter korteste vei mot ønsket retning.
@@ -519,11 +553,9 @@ function makeAIProvider(self, scene) {
     else if (da < -AI.turnDeadzone) cmd.left = true;
 
     const aimed = Math.abs(da) < AI.aimedCone;
-    // Gass når omtrent siktet, ikke vegg foran, og ikke for nær (hold litt avstand).
-    if (!wallAhead && aimed && dist > map.blockSize * AI.keepDistance) cmd.thrust = true;
-
-    // Skyt: godt siktet, innen rekkevidde, fri siktelinje.
-    if (aimed && Math.abs(da) < AI.fireCone && dist < map.blockSize * AI.fireRange && lineClear(map, self.x, self.y, dx, dy, dist)) {
+    if (allowThrust && aimed) cmd.thrust = true;
+    if (allowFire && aimed && Math.abs(da) < AI.fireCone && dist < bs * AI.fireRange
+        && lineClear(map, self.x, self.y, dx, dy, dist)) {
       cmd.fire = true;
     }
     return cmd;
@@ -555,8 +587,11 @@ class Ship {
     this.invuln = 0;
     this.fireTimer = 0;
     this.respawnTimer = 0;
+    this.takeoverTimer = 0;
 
-    const s = scene.physics.add.image(this.spawn.x, this.spawn.y, 'ship');
+    // Form: menneske = Starfighter, bot = TIE-fighter (byttes ved takeover).
+    this.texKey = this.isBot ? 'ship-bot' : 'ship-human';
+    const s = scene.physics.add.image(this.spawn.x, this.spawn.y, this.texKey);
     s.setTint(this.color);
     s.setBlendMode(Phaser.BlendModes.ADD);
     s.setDepth(5);
@@ -579,7 +614,7 @@ class Ship {
     this.thrust.setDepth(3);
 
     // Respawn-markør + nedtelling — vises der skipet kommer tilbake.
-    this.marker = scene.add.image(this.spawn.x, this.spawn.y, 'ship')
+    this.marker = scene.add.image(this.spawn.x, this.spawn.y, this.texKey)
       .setTint(this.color).setBlendMode(Phaser.BlendModes.ADD)
       .setRotation(this.spawn.angle).setAlpha(0.3).setDepth(2).setVisible(false);
     this.countText = scene.add.text(this.spawn.x, this.spawn.y - BLOCK, '', {
@@ -619,6 +654,21 @@ class Ship {
         this.angle = this.spawn.angle;
         this.applySpawn();
       }
+      return;
+    }
+
+    // Takeover-overgang: skipet «fryser» i lufta med nedtelling + pulserende highlight
+    // når et menneske hopper inn i denne boten — så det er tydelig hvilket skip du nå styrer.
+    if (this.takeoverTimer > 0) {
+      this.takeoverTimer -= dtScale;
+      this.vx = 0; this.vy = 0;
+      const pulse = 0.35 + 0.45 * Math.abs(Math.sin(this.takeoverTimer * 0.18));
+      this.marker.setTexture(this.texKey).setPosition(this.x, this.y)
+        .setRotation(this.angle).setAlpha(pulse).setVisible(true);
+      this.countText.setPosition(this.x, this.y - BLOCK).setVisible(true)
+        .setText(String(Math.max(1, Math.ceil(this.takeoverTimer / 60))))
+        .setScale(1 / this.scene.cameras.main.zoom);
+      if (this.takeoverTimer <= 0) { this.marker.setVisible(false); this.countText.setVisible(false); }
       return;
     }
 
@@ -889,7 +939,12 @@ class GameScene extends Phaser.Scene {
         bot.isBot = false;
         bot.input = this.humanKeys[hi];
         bot.label = ship.label;
-        bot.invuln = PHYSICS.spawnInvuln;     // free shield mens man «hopper inn»
+        // Morf til menneske-form + spillerens farge → tydelig hvilket skip som er deg.
+        bot.texKey = 'ship-human';
+        bot.color = ship.color;
+        bot.sprite.setTexture('ship-human').setTint(ship.color);
+        bot.takeoverTimer = PHYSICS.takeoverPause;                   // pause i lufta + nedtelling
+        bot.invuln = PHYSICS.spawnInvuln + PHYSICS.takeoverPause;    // free shield gjennom overgangen
         this.humanShips[hi] = bot;
       } else {
         this.humanShips[hi] = null;           // ingen bot å overta → ute
