@@ -11,3 +11,7 @@ desktop.ini
 
 # Genererte kart-previews (regenereres med retrorocket/json_to_png.py)
 retrorocket/png_preview/
+
+# Opphavsrettede kilde-bilder for kart-gjenskaping (kartet lever i maps-ascii/maps-json;
+# selve tegningen redistribueres IKKE i det offentlige repoet). F.eks. Calvin & Hobbes.
+calvin-hobbes-dancing.png
