@@ -1,8 +1,8 @@
 /*
  * YPilot — XPilot reimplementert i nettleseren («because Y comes after X»).
  * Phaser 4. All spillogikk i én fil (se CLAUDE.md). Norsk i kommentarer.
- * (Arbeidskatalog/repo het opprinnelig «jpilot»; localStorage-nøkler er fortsatt
- * `jpilot.*` av kompatibilitetshensyn.)
+ * (Den lokale arbeidskatalogen heter fortsatt «jpilot», men repo og localStorage-
+ * nøkler bruker «ypilot».)
  */
 
 'use strict';
@@ -53,7 +53,7 @@ const PHYSICS = {
   shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
   shieldBounce: 0.7,    // fart beholdt ved skjold-sprett mot vegg
   // — Landing —
-  groundFriction: 0.85, // vx beholdt per frame ved bakke-kontakt
+  groundFriction: 0.92, // vx beholdt per frame ved bakke-kontakt (høyere = glir lengre)
 };
 
 // AI-oppførsel (heuristisk). Vinkler i rad; fireRange/lookahead/keepDistance i blokker.
@@ -108,20 +108,24 @@ const REFUEL_RANGE = BLOCK * 2;   // hvor nær stasjonen man må være
 const REFUEL_SPEED = 3;           // px/frame — må være saktere (hovre)
 const FUEL_COLOR = 0x33ff99;      // neon-grønn fuel-stasjon
 
-// Landing (Lunar Lander / Turboraketti): myk + nesten oppreist nedstigning på en flat
-// vegg-topp → hvile. Foreløpig enkel regel; for fort eller for skjevt = krasj.
-const LAND_SPEED = 3;             // px/frame — må være saktere for å lande
-const LAND_ANGLE_TOL = 0.25;      // rad (~14°) — bittelitt skjevt går, ikke mye
+// Landing (Lunar Lander / Turboraketti): nedstigning på en flat topp → hvile. Tål litt
+// hardere landing (overlev opp til LAND_CRASH_SPEED), behold lateral fart (glir), og rett
+// opp skipet etterpå. Skrå landing tolereres; nesa vris mot loddrett når den hviler.
+const LAND_SPEED = 3;             // px/frame — under dette = «myk» landing (uten skade uansett)
+const LAND_CRASH_SPEED = 7;       // px/frame — flate-treff raskere enn dette = krasj (mellom = hard, men overlev)
+const LAND_ANGLE_TOL = 0.25;      // rad (~14°) — (beholdt; brukes ikke lenger til å gate landing)
 const LAND_MARGIN = 12;           // px senteret hviler over vegg-toppen
+const UPRIGHT_RATE = 0.06;        // rad/frame — auto-oppretting mot loddrett etter landing
 
 /* ----------------------------------------------------------------------------
  * Justerbar global gravitasjon (nedover, px/frame²). Settes via DOM-slider og
  * huskes mellom sesjoner i localStorage. Leses i Ship.update. I Fase 2 kan
  * per-kart-gravitasjon fra `.map`-headeren sette default-verdien her.
  * ------------------------------------------------------------------------- */
-const GRAVITY_KEY = 'jpilot.gravity';
+const GRAVITY_KEY = 'ypilot.gravity';
 const GRAVITY_MAX = 0.10;   // absolutt tak — over ~0.10 er spillet uspillbart (faller for fort
                             //   til å manøvrere). Slider og per-kart-header klippes til dette.
+const DEFAULT_GRAVITY = 0.07;   // default når ingen lagret/kart-spesifikk verdi (gravitasjons-spill)
 let GRAVITY = 0;
 
 // Tuning-invariant (IKKE hard-klampet her): gravitasjonen bør aldri være høyere enn
@@ -135,7 +139,7 @@ function setupGravityControl() {
   let saved = NaN;
   try { saved = parseFloat(localStorage.getItem(GRAVITY_KEY)); } catch (e) { /* privat modus */ }
   if (!Number.isNaN(saved)) GRAVITY = clampGravity(saved);
-  else GRAVITY = clampGravity((MAP && MAP.gravity) || 0);   // per-kart default
+  else GRAVITY = clampGravity((MAP && MAP.gravity) || DEFAULT_GRAVITY);   // kart-default, ellers 0.07
 
   const slider = document.getElementById('grav');
   const out = document.getElementById('grav-val');
@@ -302,6 +306,9 @@ function isExcludedMap(file) { return EXCLUDED_MAPS.has(file); }
 
 // Laster valgt kart (filnavn relativt til maps/), eller testbanen.
 async function loadMap(sel) {
+  // Nytt JSON-format (TRII + konverterte XPilot) er embeddet i maps-embedded.js → ingen
+  // fetch, laster også ved file://. Sjekkes først.
+  if (window.EMBEDDED_MAPS && window.EMBEDDED_MAPS[sel]) return buildMapFromJson(window.EMBEDDED_MAPS[sel]);
   if (!sel || sel === 'test') return buildTestMap();
   try {
     const text = await fetch('maps/' + sel).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
@@ -310,6 +317,30 @@ async function loadMap(sel) {
     console.warn('Kunne ikke laste kart', sel, '— bruker testbane.', e);
     return buildTestMap();
   }
+}
+
+// Adapter: nytt JSON-format → samme runtime-form som parseMap/buildTestMap. Heltall-tiles
+// (0=åpen, 1=solid; skråninger 2..5 reservert) → tegn-grid ('x'/' '). Spawns/fuel/soner
+// fra celle-koords til verdens-px (BLOCK). gravityZones/liquidZones bæres videre (ennå
+// ikke brukt av fysikken — venter på sone-gravitasjon/væske).
+function buildMapFromJson(j) {
+  const bs = BLOCK;
+  const tiles = j.tiles.map(row => row.map(v => (v ? 'x' : ' ')));
+  const spawns = (j.spawns || []).slice()
+    .sort((a, b) => (a.player ?? 0) - (b.player ?? 0))
+    .map(s => ({ x: (s.col + 0.5) * bs, y: (s.row + 0.5) * bs, angle: -Math.PI / 2 }));
+  const fuelStations = (j.fuelStations || []).map(f => ({ x: (f.col + 0.5) * bs, y: (f.row + 0.5) * bs }));
+  if (spawns.length === 0) {            // fallback: kvart-punkter
+    for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]])
+      spawns.push({ x: fx * j.cols * bs, y: fy * j.rows * bs, angle: -Math.PI / 2 });
+  }
+  return {
+    cols: j.cols, rows: j.rows, blockSize: bs,
+    widthPx: j.cols * bs, heightPx: j.rows * bs,
+    tiles, edgewrap: j.edgewrap !== false, gravity: j.gravity || 0, cog: null,
+    fuelStations, spawns, name: j.name || 'kart', header: {},
+    gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], source: j.source,
+  };
 }
 
 let MAP = buildTestMap();
@@ -976,9 +1007,13 @@ class Ship {
     }
     if (this.fuel < 0) this.fuel = 0;
 
-    // Vegg-død / landing. Senter i vegg = krasj. Ellers: myk + nesten oppreist
-    // nedstigning på en flat vegg-topp rett under → hvil (Lunar Lander-stil).
+    // Vegg-død / landing. Senter i vegg = treff. Et FLATE-treff ovenfra (åpent rett over)
+    // er en landing: tål opptil LAND_CRASH_SPEED, behold lateral fart (skipet glir), bremses.
+    // Side-/tak-treff eller for hardt = krasj. Skrå landing tolereres; nesa rettes opp etterpå.
     const wmap = this.scene.map;
+    const bs = wmap.blockSize;
+    const speed = Math.hypot(this.vx, this.vy);
+    this.grounded = false;
     if (tileAt(wmap, this.x, this.y) === 'x') {
       if (this.shielded || this.invuln > 0) {
         // Skjold / free-shield: sprett tilbake ut av veggen i stedet for å dø.
@@ -988,18 +1023,38 @@ class Ship {
         this.sprite.y += this.vy * dtScale * 1.5;
         if (this.shielded) this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;   // ekstra dren ved treff
       } else {
-        this.die();
+        const cellTop = Math.floor(this.y / bs) * bs;
+        const fromAbove = this.vy >= 0 && tileAt(wmap, this.x, cellTop - 1) !== 'x';
+        if (fromAbove && speed <= LAND_CRASH_SPEED) {
+          this.sprite.y = cellTop - LAND_MARGIN;     // skyv opp på flata
+          this.vy = 0;
+          this.vx *= PHYSICS.groundFriction;          // glir lateralt, bremses
+          this.grounded = true;
+        } else {
+          this.die();                                 // side-/tak-treff eller for hardt
+        }
       }
     } else if (this.vy >= 0) {
-      const topBelow = (Math.floor(this.y / wmap.blockSize) + 1) * wmap.blockSize;
+      // Pre-emptiv landing rett før flaten nås (mykt, ingen penetrasjon).
+      const topBelow = (Math.floor(this.y / bs) + 1) * bs;
       if (tileAt(wmap, this.x, topBelow + 1) === 'x'
-          && this.y > topBelow - LAND_MARGIN
-          && Math.hypot(this.vx, this.vy) < LAND_SPEED
-          && uprightOK(this.angle)) {
-        this.sprite.y = topBelow - LAND_MARGIN;   // hvil på toppen
+          && this.y > topBelow - LAND_MARGIN && speed < LAND_CRASH_SPEED) {
+        this.sprite.y = topBelow - LAND_MARGIN;
         this.vy = 0;
-        this.vx *= PHYSICS.groundFriction;         // litt bakke-friksjon
+        this.vx *= PHYSICS.groundFriction;
+        this.grounded = true;
       }
+    }
+
+    // Auto-oppretting: når skipet hviler på bakken og spilleren ikke selv roterer, vri
+    // nesa mykt mot loddrett (-PI/2) så det ser korrekt ut etter en skrå landing.
+    if (this.grounded && !input.left && !input.right) {
+      let d = (-Math.PI / 2) - this.angle;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      const step = UPRIGHT_RATE * dtScale;
+      this.angle += Math.abs(d) <= step ? d : Math.sign(d) * step;
+      this.sprite.setRotation(this.angle);
     }
   }
 
@@ -1089,9 +1144,13 @@ class GameScene extends Phaser.Scene {
     // P1: W gass / A,D rotér / S skjold (Fase 2) / SPACE fyr.
     // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
     const aiOn = readAIOn();
-    // Antall skip skaleres med kartets størrelse (større kart → flere skip).
+    // Antall skip skaleres med kartets størrelse (større kart → flere skip), MEN aldri
+    // flere enn distinkte spawn-punkter — ellers stables skip på samme base og dør
+    // momentant av kollisjon (f.eks. TRII N-spiller-kart med få baser: Ekolos_4p = 4 baser).
     const area = this.map.cols * this.map.rows;
-    const shipCount = Math.max(GAME.minShips, Math.min(GAME.maxShips, Math.round(area / GAME.tilesPerShip)));
+    const spawnPts = this.map.spawns.length;
+    const shipCount = Math.min(spawnPts,
+      Math.max(GAME.minShips, Math.min(GAME.maxShips, Math.round(area / GAME.tilesPerShip))));
     const humanCount = Math.min(shipCount, aiOn ? 1 : GAME.humans);
 
     const humanKeyDefs = [
@@ -1100,7 +1159,8 @@ class GameScene extends Phaser.Scene {
     ];
     const palette = [COLORS.p1, COLORS.p2, 0xffcc33, 0x66ff66, 0xff6688, 0xaa88ff, 0xffffff, 0xff8844];
 
-    const spawns = this.map.spawns;
+    // Distinkte, spredte spawns — én base per skip (ingen stabling).
+    const chosenSpawns = pickSpawns(this.map.spawns, shipCount);
     this.humanKeys = [];   // tastatur-providere (for takeover)
     this.humanCount = humanCount;
     this.ships = [];
@@ -1108,7 +1168,7 @@ class GameScene extends Phaser.Scene {
       const human = i < humanCount;
       const ship = new Ship(this, {
         color: palette[i % palette.length],
-        spawn: spawns[i % spawns.length],
+        spawn: chosenSpawns[i],
         isBot: !human,
         label: human ? 'P' + (i + 1) : 'Bot ' + (i - humanCount + 1),
         keys: human ? humanKeyDefs[i] : null,
@@ -1292,7 +1352,7 @@ class GameScene extends Phaser.Scene {
  * Boot — laster valgt kart (async) før Phaser startes. Canvas = fast viewport;
  * kameraet zoomer for å vise hele kartet.
  * ------------------------------------------------------------------------- */
-const MAP_KEY = 'jpilot.map';
+const MAP_KEY = 'ypilot.map';
 
 async function boot() {
   let sel = 'test';
@@ -1323,7 +1383,7 @@ async function boot() {
 
 // Leser AI-toggle (single-player mot bots). PÅ = 1 menneske → store kart låses opp.
 function readAIOn() {
-  try { return localStorage.getItem('jpilot.ai') !== 'off'; } catch (e) { return true; }
+  try { return localStorage.getItem('ypilot.ai') !== 'off'; } catch (e) { return true; }
 }
 
 // Fyller kart-velgeren fra manifestet, reload ved valg. I single-player (AI på) vises
@@ -1340,6 +1400,15 @@ async function setupMapSelector(current) {
     sel.appendChild(o);
   };
   addOpt('test', 'Testbane');
+  // Embeddede nytt-format-kart (TRII + konverterte XPilot) øverst. Alle er store →
+  // kun single-player (scroll + minimap); skjules i fler-menneske (samme regel som store XPilot-kart).
+  if (window.EMBEDDED_MAPS) {
+    Object.keys(window.EMBEDDED_MAPS).sort().forEach(k => {
+      const m = window.EMBEDDED_MAPS[k];
+      if (!aiOn && !isLocallyPlayable(m.cols, m.rows)) return;
+      addOpt(k, `${m.name || k}  [${m.source || 'JSON'} ${m.cols}×${m.rows}]`);
+    });
+  }
   try {
     const list = await fetch('maps/index.json').then(r => r.json());
     list
@@ -1363,7 +1432,7 @@ function setupAIToggle() {
   if (!cb) return;
   cb.checked = readAIOn();
   cb.addEventListener('change', () => {
-    try { localStorage.setItem('jpilot.ai', cb.checked ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+    try { localStorage.setItem('ypilot.ai', cb.checked ? 'on' : 'off'); } catch (e) { /* privat modus */ }
     location.reload();
   });
 }

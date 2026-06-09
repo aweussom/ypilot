@@ -1,0 +1,372 @@
+[
+ {
+  "file": "xpilot-all-133-maps/oatmo4.map",
+  "name": "Oatmo Tournament",
+  "w": 60,
+  "h": 50,
+  "wallPct": 24.7,
+  "spawns": 19,
+  "fuel": 19,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/oatmo5.map",
+  "name": "Oatmo Team Tournament",
+  "w": 60,
+  "h": 50,
+  "wallPct": 24.7,
+  "spawns": 19,
+  "fuel": 19,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/Arena.map",
+  "name": "The Arena",
+  "w": 79,
+  "h": 79,
+  "wallPct": 25.6,
+  "spawns": 11,
+  "fuel": 32,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/dogfight.team.map",
+  "name": "Dogfight... Team",
+  "w": 120,
+  "h": 120,
+  "wallPct": 25.8,
+  "spawns": 8,
+  "fuel": 8,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/cpp1.map",
+  "name": "Catapult Phase 1",
+  "w": 120,
+  "h": 120,
+  "wallPct": 23.9,
+  "spawns": 9,
+  "fuel": 24,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/dogfight.map",
+  "name": "Dogfight... 6 bases",
+  "w": 120,
+  "h": 120,
+  "wallPct": 26.2,
+  "spawns": 6,
+  "fuel": 8,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/oatmo8.map",
+  "name": "Oatmo Team Tourney 4",
+  "w": 35,
+  "h": 40,
+  "wallPct": 26.4,
+  "spawns": 27,
+  "fuel": 27,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/arena3.map",
+  "name": "Arena",
+  "w": 100,
+  "h": 100,
+  "wallPct": 23.0,
+  "spawns": 10,
+  "fuel": 17,
+  "wrap": false
+ },
+ {
+  "file": "xpilot-all-133-maps/teamball.map",
+  "name": "TEAMBALL",
+  "w": 57,
+  "h": 83,
+  "wallPct": 27.1,
+  "spawns": 12,
+  "fuel": 15,
+  "wrap": false
+ },
+ {
+  "file": "xpilot-all-133-maps/arena2.map",
+  "name": "Arena",
+  "w": 100,
+  "h": 100,
+  "wallPct": 22.9,
+  "spawns": 10,
+  "fuel": 27,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/blocks.map",
+  "name": "Blocks",
+  "w": 100,
+  "h": 100,
+  "wallPct": 29.4,
+  "spawns": 21,
+  "fuel": 73,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/teamball2.map",
+  "name": "TEAMBALL 2.1 - new field, more bounce, more shots",
+  "w": 57,
+  "h": 83,
+  "wallPct": 19.3,
+  "spawns": 12,
+  "fuel": 14,
+  "wrap": false
+ },
+ {
+  "file": "xpilot-all-133-maps/wasteland.map",
+  "name": "Wingman's Wasteland -- Version II",
+  "w": 100,
+  "h": 100,
+  "wallPct": 18.2,
+  "spawns": 14,
+  "fuel": 111,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/TR.map",
+  "name": "Teams&Rogues v1.0 (looks familiar to BM players)",
+  "w": 100,
+  "h": 100,
+  "wallPct": 18.0,
+  "spawns": 20,
+  "fuel": 224,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/zap.map",
+  "name": "*ZAP*, you're dead!",
+  "w": 100,
+  "h": 100,
+  "wallPct": 33.6,
+  "spawns": 10,
+  "fuel": 10,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/oatmo6.map",
+  "name": "Oatmo Team Tourney 2",
+  "w": 40,
+  "h": 60,
+  "wallPct": 15.9,
+  "spawns": 21,
+  "fuel": 21,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/oatmo7.map",
+  "name": "Oatmo Team Tourney 3",
+  "w": 90,
+  "h": 35,
+  "wallPct": 15.5,
+  "spawns": 18,
+  "fuel": 18,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/scram02.map",
+  "name": "Scramble for Victory, Scene 2",
+  "w": 100,
+  "h": 100,
+  "wallPct": 15.5,
+  "spawns": 24,
+  "fuel": 35,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/scram02r.map",
+  "name": "Scramble for Victory, Scene 2, with Robots",
+  "w": 100,
+  "h": 100,
+  "wallPct": 15.5,
+  "spawns": 24,
+  "fuel": 35,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/speed.map",
+  "name": "huge wadges of slick death from hell",
+  "w": 100,
+  "h": 100,
+  "wallPct": 15.1,
+  "spawns": 10,
+  "fuel": 19,
+  "wrap": false
+ },
+ {
+  "file": "xpilot-all-133-maps/team_tournament.map",
+  "name": "Team Tournament",
+  "w": 100,
+  "h": 53,
+  "wallPct": 35.0,
+  "spawns": 6,
+  "fuel": 2,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/war3.map",
+  "name": "Team Warfare II",
+  "w": 100,
+  "h": 53,
+  "wallPct": 35.0,
+  "spawns": 6,
+  "fuel": 2,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/scram01.map",
+  "name": "Scramble for Victory, Scene 1",
+  "w": 100,
+  "h": 100,
+  "wallPct": 14.4,
+  "spawns": 24,
+  "fuel": 36,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/scram01r.map",
+  "name": "Scramble for Victory, Scene 1, with Robots",
+  "w": 100,
+  "h": 100,
+  "wallPct": 14.4,
+  "spawns": 24,
+  "fuel": 36,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/tournament2.map",
+  "name": "Death Scrap Butt Kick",
+  "w": 100,
+  "h": 100,
+  "wallPct": 36.0,
+  "spawns": 11,
+  "fuel": 11,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/struggle_4_teams.map",
+  "name": "Struggle 4 Teams",
+  "w": 100,
+  "h": 70,
+  "wallPct": 13.7,
+  "spawns": 8,
+  "fuel": 8,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/laser_tournament.map",
+  "name": "laser_tournament",
+  "w": 80,
+  "h": 80,
+  "wallPct": 37.5,
+  "spawns": 9,
+  "fuel": 9,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/crossover2.map",
+  "name": "CrossOver2",
+  "w": 100,
+  "h": 100,
+  "wallPct": 12.5,
+  "spawns": 36,
+  "fuel": 52,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/cat.map",
+  "name": "Cat Logo",
+  "w": 100,
+  "h": 70,
+  "wallPct": 38.2,
+  "spawns": 10,
+  "fuel": 20,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/allwar.map",
+  "name": "2 Teams, All WAR!!",
+  "w": 90,
+  "h": 70,
+  "wallPct": 11.6,
+  "spawns": 12,
+  "fuel": 58,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/8.map",
+  "name": "Everyteam For Itself",
+  "w": 83,
+  "h": 83,
+  "wallPct": 11.5,
+  "spawns": 16,
+  "fuel": 0,
+  "wrap": false
+ },
+ {
+  "file": "xpilot-all-133-maps/magnet.map",
+  "name": "my_cube",
+  "w": 40,
+  "h": 40,
+  "wallPct": 11.1,
+  "spawns": 12,
+  "fuel": 12,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/oatmo9.map",
+  "name": "Oatmo Revenge (Team Tourney)",
+  "w": 50,
+  "h": 80,
+  "wallPct": 10.7,
+  "spawns": 22,
+  "fuel": 22,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/tour_de_team.map",
+  "name": "Tour de Team",
+  "w": 80,
+  "h": 60,
+  "wallPct": 10.7,
+  "spawns": 12,
+  "fuel": 15,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/live.map",
+  "name": "live and die",
+  "w": 100,
+  "h": 100,
+  "wallPct": 10.7,
+  "spawns": 8,
+  "fuel": 34,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/puzzle.map",
+  "name": "Puzzle",
+  "w": 100,
+  "h": 100,
+  "wallPct": 6.0,
+  "spawns": 10,
+  "fuel": 228,
+  "wrap": true
+ },
+ {
+  "file": "xpilot-all-133-maps/aviary.map",
+  "name": "The Aviary II",
+  "w": 100,
+  "h": 100,
+  "wallPct": 5.4,
+  "spawns": 9,
+  "fuel": 17,
+  "wrap": true
+ }
+]

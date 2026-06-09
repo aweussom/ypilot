@@ -1,4 +1,4 @@
-# jpilot online multiplayer design
+# YPilot online multiplayer design
 
 ## Mål
 
@@ -23,7 +23,7 @@ Browser P1
     |
 WebSocket
     |
-jpilot-server
+ypilot-server
     |
 WebSocket
     |
@@ -343,8 +343,8 @@ Kjør:
 
 ```text
 nginx
-  /jpilot/        -> statiske filer
-  /jpilot-ws/     -> WebSocket proxy til node server
+  /ypilot/        -> statiske filer
+  /ypilot-ws/     -> WebSocket proxy til node server
 ```
 
 Prosess:
@@ -513,7 +513,7 @@ Ingen auth.
 URL:
 
 ```text
-https://example.com/jpilot/?room=ABCD
+https://example.com/ypilot/?room=ABCD
 ```
 
 Hvis room mangler:
@@ -591,13 +591,13 @@ WebSocket relay
 periodiske snapshots
 ```
 
-Det er nok til å avgjøre om jpilot faktisk er morsomt online.
+Det er nok til å avgjøre om YPilot faktisk er morsomt online.
 
 ---
 
 # Endelig anbefaling
 
-For jpilot:
+For YPilot:
 
 ```text
 Phase Online-1:

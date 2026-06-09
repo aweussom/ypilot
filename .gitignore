@@ -8,3 +8,6 @@ desktop.ini
 
 # Skjermbilder / debug-bilder (droppes ikke i repo)
 *Skjermbilde*.png
+
+# Genererte kart-previews (regenereres med retrorocket/json_to_png.py)
+retrorocket/png_preview/

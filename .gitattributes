@@ -1,0 +1,8 @@
+# Enhetlige linjeskift: LF i både repo og arbeidskopi. Fjerner Windows-advarselen
+# «LF will be replaced by CRLF the next time Git touches it» — ingen CRLF-konvertering.
+* text=auto eol=lf
+
+# Binærfiler skal aldri linjeskift-konverteres.
+*.png binary
+*.bin binary
+*.ico binary

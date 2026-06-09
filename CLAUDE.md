@@ -35,7 +35,7 @@ framtids-notater.
 > De fleste store kart har solid kant-vegg, så skipet når sjelden den ekte kanten.
 > Toroidal rendering er en framtidig forbedring.
 
-**YPilot** (arbeidskatalog/repo `jpilot`; localStorage-nøkler `jpilot.*` beholdes) er
+**YPilot** (lokal arbeidskatalog `jpilot`, repo `ypilot`; localStorage-nøkler `ypilot.*`) er
 XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
 (Lunar Lander-slekt) med neon-wireframe-estetikk og lokal multiplayer på samme
 tastatur. Turboraketti-kart/-våpen er et bevisst utsatt lag (Fase 3).
@@ -121,7 +121,7 @@ Graphics for wireframes, partikkel-emittere for eksos, scener for spill/meny/HUD
 ### Gravitasjon (Fase 1)
 
 Global gravitasjon (nedover) er en **justerbar DOM-slider** (`#grav`), område
-0–0.10, persistert i localStorage (`jpilot.gravity`; `clampGravity()` i `game.js`),
+0–0.10, persistert i localStorage (`ypilot.gravity`; `clampGravity()` i `game.js`),
 anvendt i `Ship.update`. **Invariant:** gravitasjonen må aldri overstige det
 rakettstrålen kan bremse skipet med. Praktisk tak er senket til **0.10** — over det
 faller skipet for fort til å manøvrere (uspillbart), selv om `thrustForce` (0.40)

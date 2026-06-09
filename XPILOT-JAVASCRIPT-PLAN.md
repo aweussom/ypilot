@@ -4,9 +4,9 @@ XPilot reimplemented in the browser. Phaser 3 + WebGL. Neon wireframe aesthetic.
 Local multiplayer (same keyboard). XPilot map format support.
 Turboraketti maps and weapons are a future layer on top of this foundation.
 
-# jpilot
-Working name: "jpilot" - XPilot in Javascript. 
-Other possible names: 
+# YPilot
+Navn: "YPilot" — XPilot in Javascript (arbeidsnavn var «jpilot»).
+Andre vurderte navn: 
  - WebPilot
  - Turboraketti 2026
 
