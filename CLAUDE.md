@@ -25,10 +25,19 @@ beholder fit-til-skjerm). Alle justerbare verdier er samlet i `PHYSICS`/`AI`/`GA
 Kart kan svartelistes i `EXCLUDED_MAPS` (kjent ødelagte i YPilot) — `dog1776.map` er
 ute. Takeover skjer kun når ≥2 skip står igjen (ellers vinner siste skip).
 
-**NESTE OPPGAVE: lyd** — gjenbruk Solstice-lydmotoren («soundbed» + SFX), se memory
-`audio-fra-solstice`. Deretter: radar, så «prettification» (Solstice-grafikk).
-`XPILOT-JAVASCRIPT-PLAN.md` har fasene; memory-filene har alle design-beslutninger og
-framtids-notater.
+**Siden da (ucommittet-historikk i git):** TRII/XPilot-kart konvertert til nytt JSON-format
+(`maps-json/`, embeddet i `maps-embedded.js`; verktøy i `retrorocket/*.py`; `buildMapFromJson`
+i game.js). Plattform-pads + spawn-på-pad. **Prettification:** to looks (`ypilot.look`
+trad/new), New = organiske marching-squares+Chaikin-konturer med fBm-«vekst», kamera-Glow-
+bloom + pulserende halo. **Tuning-panel** (fanene Bevegelse/Landing/Drivstoff/Kamp/Visuelt):
+live-sliders bundet til `PHYSICS`/render-tilstand, persistert i `localStorage['ypilot.tuning']`
+(+ Eksporter-popup). Fart-avhengig sving, bakke-lading, tunbart sprett/blast.
+
+**NESTE OPPGAVE: ytelse — bak vegger til tekstur.** Organiske konturer tegnes i dag direkte
+hver frame → hakker ved høy Avrunding/Organisk/Detalj (geometri er capet for å holde det
+spillbart). Se **`TODO.md` → «PLAN: Bake vegger til tekstur»** (detaljert, egen branch
+`perf/dynamic-texture-bake`, prøv `addDynamicTexture`/`DynamicTexture.draw`). Deretter: lyd
+(Solstice-motor, memory `audio-fra-solstice`), wormholes (`TODO.md`), radar.
 
 > **Stor-kart-begrensning (kjent):** scroll-kameraet sentrerer momentant på skipet, så
 > på wrap-kart vises tomrom utenfor kartkanten (ingen toroidal dobbel-rendering ennå).
