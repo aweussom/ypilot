@@ -22,6 +22,13 @@ Diagnostisert 2026-06-09.
 
 ## Andre parkerte ting
 
+- **«Fyll» veggene med organisk nettverk** (framtidig look) — i dag er veggene bare en
+  neon-kontur (tom innside). Fyll vegg-INNSIDEN med noe organisk og glødende, à la
+  Yggdrasil fra Solstice — MEN uten sentral stamme. Mer som **mycel** (sopp-hyfenes
+  forgrenede rot-nettverk): et distribuert, forgrenende vene-nett. Idé: space-colonization
+  / DLA / random-walk-vener seedet fra vegg-kantene, tegnet som tynne ADD-glødelinjer,
+  deterministisk per kart, pre-rendret (passer baking når den lander). Kan «gro» over tid
+  (jf. levende-kart). Ref: Solstice `screenshot-2.png` (Yggdrasil), men stamme-løs.
 - **Edge-bounce** — for lukkede kart med ufullstendig vegg-kant (motoren wrapper
   alltid i dag). Unødvendig for kart med 100 % solid ramme (Ekolos).
 - **Auto-shield / Newbie-modus** (toggle) — hjelp for de som krasjer i vegger hele
