@@ -9,12 +9,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Prosjektstatus
 
-**Fase 1 (MVP) implementert.** `index.html` + `game.js` gir to skip, newtonsk
-fysikk, wrap, skyting, kollisjoner, jeteksos og score. Skjold/energi/fuel/
-gravitasjon/lyd/`.map`-lasting er Fase 2 (se `XPILOT-JAVASCRIPT-PLAN.md`, som er
-den autoritative speccen for fysikk-konstanter, kart-format, entitets-former og
-byggerekkefølgen). Denne fila oppsummerer beslutningene som styrer *hvordan* kode
-skal skrives.
+**Fase 1 ✅ + mye av Fase 2 ✅.** `index.html` + `game.js` har: newtonsk fysikk
+(manuell integrasjon + drag/terminal-fart), wrap, grid-vegg-kollisjon, skyting med
+HP (skip tåler flere treff), jeteksos, ekte `.map`-lasting (`parseMap` + kart-velger,
+areal-skalert skip-antall), justerbar gravitasjon (slider, localStorage), drivstoff
+(én ressurs: gass+skyting forbruker, auto-fylling ved `#`-stasjon), landing på flate
+topper, **bot-multiplayer free-for-all med takeover** (menneske=Starfighter, bot=TIE;
+dø → overta dårligste bot, morf + frys + nedtelling), 3 liv → eliminert → siste vinner,
+**skjold** (drenerer drivstoff, absorberer, spretter av vegg), blast-push, AI med
+nødbrems. Alle justerbare verdier er samlet i `PHYSICS`/`AI`/`GAME` (TUNING-blokk øverst
+i `game.js`). Publisert via GitHub Pages (repo `aweussom/ypilot`).
+
+**NESTE OPPGAVE: stor-kart-støtte for single-player** — scrolling-kamera som følger
+menneskets skip + minimap i et hjørne som viser hele kartet + alle skip. Se memory
+`lokal-vs-nettverk-kart` (designet er bestemt). Deretter: lyd (gjenbruk Solstice-motor),
+radar, så «prettification» (Solstice-grafikk). `XPILOT-JAVASCRIPT-PLAN.md` har fasene;
+memory-filene har alle design-beslutninger og framtids-notater.
 
 **YPilot** (arbeidskatalog/repo `jpilot`; localStorage-nøkler `jpilot.*` beholdes) er
 XPilot reimplementert i nettleseren: et newtonsk romkamp-spill
