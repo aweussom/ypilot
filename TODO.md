@@ -20,6 +20,17 @@ Diagnostisert 2026-06-09.
   tilfeldig ut/`@`-celle, behold fart, sett kort cooldown.
 - Konsekvens: kart der baser kun nås via wormhole (arena2) blir spillbare.
 
+## Fase 3 — Turboraketti-lag (parkert til senere)
+
+- **Push-off / «fraspark» fra flater** — Turboraketti-signaturfølelsen: å skyte/dytte
+  rakettstrålen mot en flate gir FREMDRIFT (føles nesten som et skjold i seg selv). Ikke
+  laget ennå. Beslektet med — men ikke det samme som — dagens vegg-mekanikk: `wallLethalSpeed`/
+  skjold-sprett lar deg sprette/dø mot en vegg; push-off skal i stedet gi deg kraft FRA den.
+  Vegg-/kollisjonskoden er bevisst designet så den ikke stenger for dette (se CLAUDE.md
+  «Følelses-quirks» + XPILOT-JAVASCRIPT-PLAN.md Fase 3). Mer kraft jo nærmere/mer rett-på flata.
+- **Rakettstrålen som våpen** — eksosen gjør skade + dytter motstanderen (mer dytt mot skjold
+  = større flate), torque fra off-center treff → uventet spinn → krasj (XPILOT-JAVASCRIPT-PLAN.md:474).
+
 ## Andre parkerte ting
 
 - ✅ **«Fyll» veggene med organisk mycel-nettverk** — GJORT. `buildMycel` + `solidDepthField`
@@ -36,13 +47,15 @@ Diagnostisert 2026-06-09.
     subtil tekstur) i stedet for vene-nettet. Behold «viser fast vs. tomt»-funksjonen.
 - **Edge-bounce** — for lukkede kart med ufullstendig vegg-kant (motoren wrapper
   alltid i dag). Unødvendig for kart med 100 % solid ramme (Ekolos).
-- **Auto-shield / Newbie-modus** (toggle) — hjelp for de som krasjer i vegger hele
-  tiden (tastatur-treghet / rust). Auto-skjold rett før vegg-treff: gjenbruk AI-ens
-  skjold-refleks (`dangerClose && speed > shieldSpeed && fuel > shieldFuelMin`) på
-  menneske-skip når modus er på. Vurder også mykere kollisjon i denne modusen.
-- **Gravitasjon på skudd** (justerbar on/off) — la kuler påvirkes av gravitasjonen
-  (buet skuddbane). I dag flyr kuler rett (Arcade-velocity, ingen gravitasjon).
-  Krever at bullets integreres med GRAVITY (evt. egen `bulletGravity`-faktor).
+- ✅ **Auto-shield / Newbie-modus** (toggle) — GJORT. Live-toggle «Newbie» i bunnlinja
+  (global `NEWBIE`, persistert `ypilot.newbie`). PÅ → menneske-skip auto-skjolder rett før
+  vegg-treff (fart-skalert føler langs fartsretning i `Ship.update`), og et skjoldet treff
+  spretter ALLTID (dødelig-fart slått av for newbie-mennesker). Bots upåvirket. Se CLAUDE.md.
+- ✅ **Gravitasjon på skudd** — GJORT. Kuler integreres nå med `GRAVITY` i `Bullet.update`
+  (px/sek-body, samme akselerasjon som skipet: `GRAVITY·gravityScale·dtScale·60` på
+  `velocity.y`). Per-kule `gravityScale` (default 1) → framtidige «tunge» skudd buer mer.
+  Leser global `GRAVITY`, ikke skytterens tilstand → kula faller selv om skytteren var
+  spawn-usårbar. På 0-gravitasjons-kart flyr kulene rett, som før.
 
 ## ✅ FERDIG: Bake vegger til tekstur (ytelse) — branch `perf/dynamic-texture-bake`
 

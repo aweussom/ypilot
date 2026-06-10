@@ -41,10 +41,13 @@ python -m http.server 8000
 ## Status
 
 - **Fase 1 (MVP):** newtonsk fysikk, wrap, skyting, kollisjoner, jeteksos, score. ✅
-- **Fase 2 (pågår):** ekte `.map`-lasting, AI-bots + free-for-all m/ takeover,
-  drivstoff + fylling, liv/game-over, skjold, justerbar gravitasjon, landing,
-  stor-kart single-player (scroll-kamera + minimap). ✅ Gjenstår: lyd, radar.
-- **Fase 3:** TurboRaketti II-lag (kart og våpen).
+- **Fase 2 (i praksis ferdig):** ekte `.map`-lasting, AI-bots + free-for-all m/
+  takeover, drivstoff + fylling, liv/game-over, skjold, justerbar gravitasjon (også
+  på skudd → buet skuddbane), landing, stor-kart single-player (scroll-kamera +
+  minimap), newbie-modus (auto-skjold), bot-pathfinding, dødelig vegg-fart + blast-push,
+  organisk veggrendering (mycel/baking) + parallax-starfield. ✅ Gjenstår: lyd, radar,
+  wormholes.
+- **Fase 3:** TurboRaketti II-lag — kart, ekstra våpen, og «push-off»/fraspark fra flater.
 
 ## Stack
 

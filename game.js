@@ -1145,10 +1145,14 @@ class Minimap {
  * Bullet
  * ------------------------------------------------------------------------- */
 class Bullet {
-  constructor(scene, owner, x, y, vxFrame, vyFrame) {
+  constructor(scene, owner, x, y, vxFrame, vyFrame, gravityScale = 1) {
     this.scene = scene;
     this.owner = owner;
     this.life = PHYSICS.bulletLife;
+    // Hvor sterkt kula påvirkes av tyngdekraften. 1 = som skipet; framtidige «tunge» skudd
+    // setter > 1 (faller/buer mer). Leses fra global GRAVITY, IKKE skytterens tilstand → en
+    // kule faller selv om skytteren var spawn-usårbar (gravitasjon av på skipet). Se update().
+    this.gravityScale = gravityScale;
 
     // Arcade-image i bullet-gruppa → overlap-deteksjon mot skip.
     const s = scene.bulletGroup.create(x, y, 'bullet');
@@ -1167,6 +1171,11 @@ class Bullet {
   update(dtScale) {
     if (this.dead || !this.sprite) return;   // kan ha blitt destruert via overlap samme frame
     this.life -= dtScale;
+    // Tyngdekraft på kula: skipet integrerer px/frame (vy += GRAVITY·dtScale); Arcade-body'en
+    // er px/sek, så samme akselerasjon = GRAVITY·gravityScale·dtScale·60 lagt til velocity.y.
+    // Gjelder uansett skytterens spawn-tilstand (kula eier sin egen bane).
+    const g = GRAVITY * this.gravityScale;
+    if (g) this.sprite.body.velocity.y += g * dtScale * 60;
     wrapObject(this.scene.map, this.sprite);
     // Bullet stoppes av vegg.
     if (this.life <= 0 || tileAt(this.scene.map, this.sprite.x, this.sprite.y) === 'x') {
@@ -1568,6 +1577,13 @@ class Ship {
     this.vx = 0; this.vy = 0;
     this.alive = true;
     this.invuln = PHYSICS.spawnInvuln;
+    // Spawn-«flyt»: gravitasjonen er AV til spilleren faktisk gjør noe — ellers dras et skip
+    // som spawner «ute i ingenting» rett i en vegg det første sekundet. MEN skilt fra
+    // skade-immuniteten (invuln): så snart man gir gass slår gravitasjonen inn (se update),
+    // så et skip som spawner på solid grunn i trangt rom flyr med forventet thrust−gravitasjon
+    // i stedet for full netto-thrust (som gir «for mye fart» → krasj). Skyting fjerner invuln
+    // helt (offensiv handling), og da er flyt-flagget uansett uvirksomt.
+    this.spawnFloat = true;
     this.fuel = PHYSICS.fuelMax;
     this.hp = PHYSICS.shipHP;
     this.shielded = false;
@@ -1649,11 +1665,14 @@ class Ship {
       this.vx += Math.cos(this.angle) * PHYSICS.thrustForce * dtScale;
       this.vy += Math.sin(this.angle) * PHYSICS.thrustForce * dtScale;
       this.fuel -= PHYSICS.fuelThrust * fuelMapScale(this.scene.map) * dtScale;
+      this.spawnFloat = false;   // gass = man er i kontroll → gravitasjonen på umiddelbart
     }
 
-    // Global gravitasjon (nedover) — AV mens spawn-usårbarheten varer, så man ikke
-    // dras rett i en vegg det første sekundet.
-    if (this.invuln <= 0) this.vy += GRAVITY * dtScale;
+    // Global gravitasjon (nedover) — AV kun mens spawn-flyten varer (nyspawnet OG ikke gjort
+    // noe ennå), så et skip som spawner «ute i ingenting» ikke dras rett i en vegg. Så snart
+    // man gir gass (eller skyter → invuln=0) slår den inn, så flyturen fra spawn matcher
+    // resten av kartet (thrust−gravitasjon, ikke full netto-thrust).
+    if (!(this.invuln > 0 && this.spawnFloat)) this.vy += GRAVITY * dtScale;
 
     // Litt drag → terminal-fart, så et fall ikke akselererer i det uendelige.
     // PHYSICS.drag = 1 gir rent friksjonsløst vakuum.
@@ -1706,6 +1725,11 @@ class Ship {
       this.fire();
       this.fuel -= PHYSICS.fuelShot;
       this.fireTimer = PHYSICS.fireCooldown;
+      // Å skyte er en offensiv handling → man forspiller spawn-skjoldet. Hindrer «park på
+      // spawn, henge usårbar (tyngdekraft av) og pepre andre mens botene hopper over deg som
+      // mål». Free-shieldet blir dermed rent defensivt. Tyngdekraften slår inn igjen neste
+      // frame (invuln<=0), alpha → 1. Gjelder alle skip; takeover-frysen nås ikke (return over).
+      if (this.invuln > 0) { this.invuln = 0; this.sprite.setAlpha(1); }
     }
 
     // Fylling — hvile på bakken lader sakte (TurboRaketti: tank opp på/ved base; hindrer
@@ -2018,6 +2042,7 @@ class GameScene extends Phaser.Scene {
         bot.sprite.setTexture('ship-human').setTint(ship.color);
         bot.takeoverTimer = PHYSICS.takeoverPause;                   // pause i lufta + nedtelling
         bot.invuln = PHYSICS.spawnInvuln + PHYSICS.takeoverPause;    // free shield gjennom overgangen
+        bot.spawnFloat = true;                                       // flyt-grace til spilleren gir gass/skyter
         this.humanShips[hi] = bot;
       } else {
         this.humanShips[hi] = null;           // ingen bot å overta → ute
