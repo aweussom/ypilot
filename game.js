@@ -92,6 +92,11 @@ const AI = {
   brakeLead:    2.0,    // blokker per (px/frame) fart — ekstra fremsyn (raskere = bremser tidligere)
   brakeClose:   3.2,    // blokker — innenfor dette = «for sent å bremse», utløs skjold-refleks
   cruiseSpeed:  4.0,    // px/frame — over dette sluttes å gasse når vi alt farer i ønsket retning
+  // — «Hender»: menneskelig finger-treghet. Min. tid (ms) mellom hver gang boten kan FLIPPE
+  //   sving-retning (a/d) eller toggle gass (w/s). Uten dette twitcher den frame-perfekt og blir
+  //   urealistisk presis. Høyere = grovere sikting/hovring → litt mindre god. Snappy ved nødbrems.
+  handReact:    90,     // ms — sving-retning (venstre↔høyre)
+  handThrust:   120,    // ms — gass på↔av
 };
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
@@ -1465,6 +1470,19 @@ function makeAIProvider(self, scene) {
         && lineClear(map, self.x, self.y, dx, dy, dist)) {
       cmd.fire = true;
     }
+
+    // «Hender»: begrens hvor ofte rotasjons-retning/gass kan endres (finger-treghet). Snappy
+    // ved nødbrems (overlevelse). Ellers tracker boten ønsket retning grovere → mindre presis.
+    const now = scene.time.now;
+    const hand = self._hand || (self._hand = { rot: 0, rotT: 0, thr: false, thrT: 0 });
+    const desRot = cmd.right ? 1 : (cmd.left ? -1 : 0), desThr = !!cmd.thrust;
+    if (danger) {                                   // full kontroll: hold hånd-tilstand i sync
+      hand.rot = desRot; hand.thr = desThr; hand.rotT = now; hand.thrT = now;
+    } else {
+      if (desRot !== hand.rot && (now - hand.rotT) >= AI.handReact)  { hand.rot = desRot; hand.rotT = now; }
+      if (desThr !== hand.thr && (now - hand.thrT) >= AI.handThrust) { hand.thr = desThr; hand.thrT = now; }
+      cmd.left = hand.rot < 0; cmd.right = hand.rot > 0; cmd.thrust = hand.thr;
+    }
     return cmd;
   };
 }
@@ -1990,7 +2008,10 @@ class GameScene extends Phaser.Scene {
       if (bot) {
         bot.isBot = false;
         bot.input = this.humanKeys[hi];
-        bot.label = ship.label;
+        // Behold botens opprinnelige navn + hvem som styrer den nå → ærlig seier-tekst:
+        // «Bot 3 (P1) vant!» i stedet for å late som P1s eget skip vant. Bruk stabil spiller-tag
+        // «P{n}» (ikke det døende skipets navn) så gjentatte takeovers ikke nøster seg.
+        bot.label = bot.label + ' (P' + (hi + 1) + ')';
         // Morf til menneske-form + spillerens farge → tydelig hvilket skip som er deg.
         bot.texKey = 'ship-human';
         bot.color = ship.color;
@@ -2218,6 +2239,8 @@ const TUNING = [
   { g: 'Kamp',      key: 'wallLethal',    label: 'Dødelig fart',  min: 2,    max: 16,   step: 0.5,   get: () => PHYSICS.wallLethalSpeed, set: v => PHYSICS.wallLethalSpeed = +v },
   { g: 'Kamp',      key: 'spawnInvuln',   label: 'Spawn-skjold',  min: 30,   max: 240,  step: 15,    get: () => PHYSICS.spawnInvuln,  set: v => PHYSICS.spawnInvuln = +v },
   { g: 'Kamp',      key: 'winSurvive',    label: 'Overlev-tid',   min: 0,    max: 360,  step: 30,    get: () => PHYSICS.winSurviveTime, set: v => PHYSICS.winSurviveTime = +v },
+  { g: 'Kamp',      key: 'handReact',     label: 'Bot sving-react', min: 0,  max: 300,  step: 10,    get: () => AI.handReact,         set: v => AI.handReact = +v },
+  { g: 'Kamp',      key: 'handThrust',    label: 'Bot gass-react',  min: 0,  max: 300,  step: 10,    get: () => AI.handThrust,        set: v => AI.handThrust = +v },
   { g: 'Kamp',      key: 'bounceKick',    label: 'Sprett-boost',  min: 1,    max: 2.5,  step: 0.05,  get: () => PHYSICS.bounceKick,   set: v => PHYSICS.bounceKick = +v },
   { g: 'Kamp',      key: 'blastForce',    label: 'Blast-dytt',    min: 0,    max: 12,   step: 0.5,   get: () => PHYSICS.blastForce,   set: v => PHYSICS.blastForce = +v },
   { g: 'Kamp',      key: 'blastRadius',   label: 'Blast-vidde',   min: 32,   max: 320,  step: 16,    get: () => PHYSICS.blastRadius,  set: v => PHYSICS.blastRadius = +v },

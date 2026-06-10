@@ -49,6 +49,12 @@ toppfart skalerer MED tank — full tank = `maxSpeed`, tom = `maxSpeed·(1−fue
 ekte fysikk med vilje: nyspawnet (full tank) er raskest → kommer unna campere. (3) Spawn-skjold
 `PHYSICS.spawnInvuln` økt til ~2s, tunbar i Kamp. (2)+(3) er mest for framtidig menneske-MP.
 
+**Bot-«hender» + takeover-navn ✅:** botene var frame-perfekte (twitchet hver frame, urealistisk
+presise). `self._hand` begrenser nå hvor ofte de kan FLIPPE sving-retning (`AI.handReact`) og
+toggle gass (`AI.handThrust`) — finger-treghet → grovere sikting/hovring, litt mindre gode.
+Snappy ved nødbrems. Tunbart «Bot sving-react»/«Bot gass-react» (Kamp). Og: takeover beholder
+botens navn → seier viser «Bot 3 (P1) vant!» (stabil spiller-tag, ingen nøsting ved gjentatt takeover).
+
 **Overlev-for-å-vinne + blast ✅:** (1) Siste skip vinner IKKE på flekken — det må overleve et
 vindu (`PHYSICS.winSurviveTime` ~2.5s, tunbar «Overlev-tid» i Kamp) mens kuler i lufta fortsatt
 kan drepe → uavgjort (TurboRaketti II-følelse). Avgjøres i `GameScene.update`; HUD viser
