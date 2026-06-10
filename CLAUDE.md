@@ -56,6 +56,14 @@ kan drepe → uavgjort (TurboRaketti II-følelse). Avgjøres i `GameScene.update
 inn i vegger der vegg-mekanikken tar fuel/skjold/liv (synergi med `wallLethalSpeed`). Tunbart:
 «Blast-dytt» (`blastForce`) + «Blast-vidde» (`blastRadius`) i Kamp.
 
+**Starfield + måne ✅:** diskret parallax-starfield (to skjerm-festede ADD-TileSprites, fjern +
+nær, parallax via tilePosition fra kamera-scroll — funker i fit OG scroll, fyller tomrom utenfor
+kartkanten). Glødende neon-«måne» med Death Star-hint (superlaser-dish + ekvator-grøft) + diskret
+«Ikke en\nmåne!»-label midt på. Månen er VERDENS-festet (følger ikke spilleren) på den romsligste
+innomhus-flekken (`findMoonSpot`, BFS-avstand-til-vegg, margin fra kant), skalert etter kart-
+størrelse (C&H ≈ 2,2×). Tunbar «Stjerner»-slider (Visuelt, 0 = av). `makeSpaceTextures`/
+`createStarfield` i game.js; tekstur-tiles genereres én gang per økt.
+
 **Newbie-modus (auto-shield) ✅:** live-toggle «Newbie» i bunnlinja (global `NEWBIE`, persistert
 `ypilot.newbie`). PÅ → menneske-skip auto-skjolder rett før vegg-treff (fart-skalert føler langs
 fartsretning i `Ship.update`), og et skjoldet treff spretter ALLTID (dødelig-fart slått av for

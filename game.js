@@ -147,6 +147,7 @@ let DETAIL = 0.02;         // fBm-frekvens — høyere = tettere/mer ruglete org
 let GLOW_STRENGTH = 1.6;   // kamera-Glow outerStrength (New look)
 let MYCEL = 0.7;           // mycel-fyll: glødende forgrenet vene-nett inni veggene (New, 0 = av)
 let TRI_FILL = 0.6;        // trekant-fyll av solide soner i Trad-look (0 = av)
+let STARS = 1.0;           // parallax-starfield + måne i bakgrunnen (0 = av)
 let BEVEL = 0.3;           // Trad: 45°-bevel av skarpe konvekse hjørner (andel av blokk, 0 = av)
 let GAME_SCENE = null;     // aktiv GameScene (for live tuning av rendering)
 function clampRound(v) { v = Math.round(+v); return Number.isNaN(v) ? 3 : Math.min(6, Math.max(0, v)); }
@@ -471,6 +472,123 @@ function makeTextures(scene) {
   g.generateTexture('shield', 44, 44);
 
   g.destroy();
+}
+
+/* ----------------------------------------------------------------------------
+ * Romfølelse: parallax-starfield + glødende «måne» (med diskret Death Star-hint).
+ * Tekstur-tiles genereres én gang; vises som skjerm-festede TileSprites med parallax via
+ * tilePosition (funker i både fit- og scroll-modus, og fyller tomrommet utenfor kartkanten
+ * på scroll-kart). Alt ADD-blendet, bak veggene (depth < 0, men > bg sin -1).
+ * ------------------------------------------------------------------------- */
+function makeSpaceTextures(scene) {
+  if (scene.textures.exists('moon')) return;         // genereres én gang per økt
+  const g = scene.make.graphics({ add: false });
+  const T = 512;   // stor tile → stjernene spres tynt utover (diskret, «langt unna»)
+
+  // Fjerne stjerner — FÅ, bittesmå, svært dimme pinprikker (distansert romstøv).
+  for (let i = 0; i < 26; i++) {
+    g.fillStyle(0x9fbce6, 0.10 + Math.random() * 0.16);
+    g.fillCircle(Math.random() * T, Math.random() * T, 0.5 + Math.random() * 0.4);
+  }
+  g.generateTexture('star-far', T, T); g.clear();
+
+  // Nære stjerner — enda færre, litt lysere, av og til varme/blå; sjelden kryss-glimt.
+  for (let i = 0; i < 11; i++) {
+    const x = Math.random() * T, y = Math.random() * T, big = Math.random() < 0.16;
+    const r = big ? 1.1 + Math.random() * 0.9 : 0.6 + Math.random() * 0.5;
+    const tint = Math.random() < 0.14 ? 0xfff0c0 : (Math.random() < 0.12 ? 0xbfe0ff : 0xffffff);
+    g.fillStyle(tint, 0.28); g.fillCircle(x, y, r * 1.7);
+    g.fillStyle(0xffffff, 0.7); g.fillCircle(x, y, r * 0.6);
+    if (big) { g.lineStyle(0.7, 0xffffff, 0.32); g.lineBetween(x - r * 2.6, y, x + r * 2.6, y); g.lineBetween(x, y - r * 2.6, x, y + r * 2.6); }
+  }
+  g.generateTexture('star-near', T, T); g.clear();
+
+  // Måne — neon-glødende kropp med klart Death Star-hint (superlaser-dish + ekvator-grøft).
+  // NB: teksturen må romme HELE haloen (ellers klippes glødet til en avrundet firkant av
+  // tekstur-kanten). Største halo-radius = R + 8*4 = 90 < M/2 = 100 → ren sirkulær glød.
+  const M = 200, cx = M / 2, cy = M / 2, R = 58;
+  for (let i = 8; i >= 1; i--) { g.fillStyle(0x88bbff, 0.022); g.fillCircle(cx, cy, R + i * 4); }  // halo (dim)
+  g.fillStyle(0x16273f, 0.5); g.fillCircle(cx, cy, R);                     // dim kropp
+  g.lineStyle(2, 0xbfe0ff, 0.7); g.strokeCircle(cx, cy, R);               // rim
+  g.lineStyle(1.5, 0xbfe0ff, 0.7); g.strokeCircle(cx - R * 0.3, cy - R * 0.34, R * 0.22);  // superlaser-dish
+  g.fillStyle(0x9fc0e8, 0.12); g.fillCircle(cx - R * 0.3, cy - R * 0.34, R * 0.2);
+  g.lineStyle(1.5, 0x88bbff, 0.6); g.lineBetween(cx - R * 0.93, cy + R * 0.06, cx + R * 0.93, cy - R * 0.02);  // ekvator-grøft
+  g.lineStyle(1, 0x6fa0d0, 0.5);
+  g.strokeCircle(cx + R * 0.32, cy + R * 0.26, R * 0.15);                 // et par «kratere»
+  g.strokeCircle(cx - R * 0.2, cy + R * 0.42, R * 0.1);
+  g.generateTexture('moon', M, M); g.clear();
+
+  g.destroy();
+}
+
+function applyStarVisibility(scene) {
+  const on = STARS > 0;
+  for (const o of [scene.starFar, scene.starNear, scene.moon, scene.moonLabel]) if (o) o.setVisible(on);
+  if (scene.starFar)  scene.starFar.setAlpha(0.8 * STARS);
+  if (scene.starNear) scene.starNear.setAlpha(0.9 * STARS);
+  if (scene.moon)     scene.moon.setAlpha(Math.min(1, 0.58 * STARS));
+  if (scene.moonLabel) scene.moonLabel.setAlpha(Math.min(1, 0.5 * STARS));
+}
+
+function createStarfield(scene) {
+  makeSpaceTextures(scene);
+  const W = viewW(), H = viewH();
+  // Stjernelagene er skjerm-festet (uendelig fjernt) med parallax via tilePosition (i update).
+  const mk = (key, depth) => scene.add.tileSprite(0, 0, W, H, key)
+    .setOrigin(0, 0).setScrollFactor(0).setDepth(depth).setBlendMode(Phaser.BlendModes.ADD);
+  scene.starFar = mk('star-far', -0.92);
+  scene.starNear = mk('star-near', -0.9);
+  scene.scale.on('resize', () => {
+    if (scene.starFar) scene.starFar.setSize(viewW(), viewH());
+    if (scene.starNear) scene.starNear.setSize(viewW(), viewH());
+  });
+
+  // Månen står på en FAST verdens-posisjon (følger ikke spilleren) — den romsligste åpne flekken
+  // på kartet. Skalert etter kartstørrelse (større kart → større måne; C&H ≈ 2x). Bak veggene.
+  const map = scene.map;
+  const spot = findMoonSpot(map);
+  const moonScale = Math.max(0.8, Math.min(2.2, map.widthPx / 1800));
+  scene.moon = scene.add.image(spot.x, spot.y, 'moon')
+    .setDepth(-0.88).setBlendMode(Phaser.BlendModes.ADD).setScale(moonScale);
+  scene.moonLabel = scene.add.text(spot.x, spot.y, 'Ikke en\nmåne!', {
+    fontFamily: 'monospace', fontSize: '11px', color: '#bfe0ff', align: 'center',
+  }).setOrigin(0.5, 0.5).setDepth(-0.87).setScale(moonScale);
+
+  applyStarVisibility(scene);
+}
+
+// Finn den romsligste åpne flekken på kartet (åpen celle lengst fra nærmeste vegg) — der får
+// månen «plass». BFS-avstandsfelt fra alle vegg-celler ut i det åpne; velg argmax.
+function findMoonSpot(map) {
+  const cols = map.cols, rows = map.rows, bs = map.blockSize;
+  const dist = new Int16Array(cols * rows).fill(-1);
+  let q = [];
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      if (map.tiles[r][c] === 'x') { dist[r * cols + c] = 0; q.push(r * cols + c); }
+  if (!q.length) return { x: map.widthPx / 2, y: map.heightPx / 2 };  // ingen vegger → midten
+  // Hold månen unna kart-kanten (ellers havner den i et hjørne på sparsomme wraparound-kart,
+  // halvveis utenfor — motoren dobbel-rendrer ikke ved sømmen).
+  const margin = Math.max(6, Math.floor(Math.min(cols, rows) * 0.12));
+  let best = -1, bestI = (Math.floor(rows / 2)) * cols + Math.floor(cols / 2);
+  while (q.length) {
+    const nq = [];
+    for (const i of q) {
+      const c = i % cols, r = (i - c) / cols;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nc = c + dc, nr = r + dr;
+        if (nc < 0 || nc >= cols || nr < 0 || nr >= rows) continue;
+        const ni = nr * cols + nc;
+        if (dist[ni] !== -1) continue;
+        dist[ni] = dist[i] + 1; nq.push(ni);
+        const interior = nc >= margin && nc < cols - margin && nr >= margin && nr < rows - margin;
+        if (interior && dist[ni] > best) { best = dist[ni]; bestI = ni; }
+      }
+    }
+    q = nq;
+  }
+  const bc = bestI % cols, br = (bestI - bc) / cols;
+  return { x: (bc + 0.5) * bs, y: (br + 0.5) * bs };
 }
 
 /* ----------------------------------------------------------------------------
@@ -1713,6 +1831,7 @@ class GameScene extends Phaser.Scene {
     GAME_SCENE = this;            // for live tuning (rebuild av vegger, glød-styrke)
 
     makeTextures(this);
+    createStarfield(this);        // parallax-starfield + måne (bak veggene)
     renderMap(this, this.map);
 
     // New look: ekte soft bloom via kamera-Glow-filter (Phaser 4 filters) — WebGL-ekvivalenten
@@ -1951,6 +2070,14 @@ class GameScene extends Phaser.Scene {
       if (this.neon.fuel) this.neon.fuel.setAlpha(0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3)));
     }
 
+    // Parallax-starfield: stjernelagene (uendelig fjernt) drifter saktere enn verden (dybde).
+    // Månen er verdens-festet (egen world-posisjon) → kamera håndterer den, ingen per-frame her.
+    if (this.starFar) {
+      const cam = this.cameras.main;
+      this.starFar.tilePositionX = cam.scrollX * 0.15;  this.starFar.tilePositionY = cam.scrollY * 0.15;
+      this.starNear.tilePositionX = cam.scrollX * 0.40; this.starNear.tilePositionY = cam.scrollY * 0.40;
+    }
+
     for (const ship of this.ships) ship.update(dtScale);
 
     for (let i = this.bullets.length - 1; i >= 0; i--) {
@@ -2104,6 +2231,7 @@ const TUNING = [
   { g: 'Visuelt',   key: 'mycel',         label: 'Mycel',         min: 0,    max: 2,    step: 0.1,   get: () => MYCEL,                set: v => { MYCEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'triFill',       label: 'Trekanter',     min: 0,    max: 2,    step: 0.1,   get: () => TRI_FILL,             set: v => { TRI_FILL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'bevel',         label: 'Bevel',         min: 0,    max: 0.5,  step: 0.05,  get: () => BEVEL,                set: v => { BEVEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
+  { g: 'Visuelt',   key: 'stars',         label: 'Stjerner',      min: 0,    max: 2,    step: 0.1,   get: () => STARS,                set: v => { STARS = +v; if (GAME_SCENE) applyStarVisibility(GAME_SCENE); } },
 ];
 
 // Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).
