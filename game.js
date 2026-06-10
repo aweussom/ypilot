@@ -29,9 +29,12 @@ const PHYSICS = {
   // — Skyting —
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
-  fireCooldown: 13,     // frames mellom skudd
+  fireCooldown: 8,      // frames mellom skudd — XPilot-tett skuddtakt (TR-II går enda tettere; ned mot 4) [tunbar, Kamp]
   noseOffset:   14,     // px — der kula/eksosen starter foran/bak senteret
-  bulletRadius: 3,      // px — bullet-hitbox
+  bulletRadius: 2,      // px — bullet-hitbox (fysisk mindre kuler, à la XPilot)
+  bulletKnockback: 0.6, // px/frame impuls på skip pr. treff, i kulas fartsretning. En TETT skuddstråle
+                        //   dytter målet kontinuerlig → tungt å manøvrere «ut» av strålen (TR-II-følelse).
+                        //   Gjelder OGSÅ gjennom skjold (skjoldet stopper skaden, ikke dyttet). 0 = av. [tunbar, Kamp]
   shotDamage:   1,      // skade per treff
   // — Skip / liv / respawn —
   shipRadius:   8,      // px — skip-hitbox
@@ -58,7 +61,7 @@ const PHYSICS = {
   fuelMapRef:   48,     // tiles — kart ≤ denne dim. bruker full fuelThrust; større kart skalerer
                         //   drivstoff-bruk fra rakett lineært ned (mer å fly over → billigere gass)
   fuelMapMin:   0.20,   // gulv for skaleringen (svært store kart: ned mot 20 % bruk per thrust)
-  fuelShot:     2,      // drivstoff per skudd
+  fuelShot:     1.25,   // drivstoff per skudd (senket i takt med raskere skuddtakt → ~samme fuel/sek ved sustained ild)
   fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
   // — Skjold —
   shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
@@ -68,6 +71,7 @@ const PHYSICS = {
                         // sakte treff spretter). invuln (spawn-grace) er unntatt. [tunbar]
   // — Landing —
   groundFriction: 0.92, // vx beholdt per frame ved bakke-kontakt (høyere = glir lengre)
+  tipSlide:     0.25,   // px/frame² — dytt mot ustøttet side når bare ett bein har grunn (tipper av) [tunbar]
 };
 
 // AI-oppførsel (heuristisk). Vinkler i rad; fireRange/lookahead/keepDistance i blokker.
@@ -140,6 +144,8 @@ const LAND_SPEED = 3;             // px/frame — under dette = «myk» landing 
 let   LAND_CRASH_SPEED = 7;       // px/frame — flate-treff raskere enn dette = krasj (mellom = hard, men overlev) [tunbar]
 const LAND_ANGLE_TOL = 0.25;      // rad (~14°) — (beholdt; brukes ikke lenger til å gate landing)
 const LAND_MARGIN = 12;           // px senteret hviler over vegg-toppen
+const LAND_LEG = 11;              // px — halv «bein-bredde»: begge bein (±dette) må ha solid
+                                  // under seg for en stabil landing, ellers tipper skipet av kanten
 let   UPRIGHT_RATE = 0.06;        // rad/frame — auto-oppretting mot loddrett etter landing [tunbar]
 
 /* ----------------------------------------------------------------------------
@@ -238,6 +244,7 @@ function buildTestMap() {
       x: (s.col + 0.5) * BLOCK, y: (s.row + 0.5) * BLOCK, angle: -Math.PI / 2,
     })),
     fuelStations: fuelCells.map(f => ({ x: (f.col + 0.5) * BLOCK, y: (f.row + 0.5) * BLOCK })),
+    name: 'Testbane',
   };
 }
 
@@ -458,11 +465,11 @@ function makeTextures(scene) {
   g.generateTexture('ship-bot', 32, 32);
   g.clear();
 
-  // Bullet — liten lysende prikk (ADD gir glød). Mindre enn skipet.
-  g.fillStyle(0xffffff, 0.35); g.fillCircle(5, 5, 4);
-  g.fillStyle(0xffffff, 0.7);  g.fillCircle(5, 5, 2.4);
-  g.fillStyle(0xffffff, 1.0);  g.fillCircle(5, 5, 1.2);
-  g.generateTexture('bullet', 10, 10);
+  // Bullet — bitte liten lysende prikk (ADD gir glød). XPilot-små kuler, mindre enn før.
+  g.fillStyle(0xffffff, 0.30); g.fillCircle(4, 4, 3);
+  g.fillStyle(0xffffff, 0.7);  g.fillCircle(4, 4, 1.7);
+  g.fillStyle(0xffffff, 1.0);  g.fillCircle(4, 4, 0.9);
+  g.generateTexture('bullet', 8, 8);
   g.clear();
 
   // Partikkel-prikk (eksos/eksplosjon).
@@ -1735,12 +1742,17 @@ class Ship {
     // Fylling — hvile på bakken lader sakte (TurboRaketti: tank opp på/ved base; hindrer
     // også soft-lock når man er tom og landet på et kart uten stasjoner), ELLER hovre sakte
     // nær en fuel-stasjon (#). `this.grounded` settes i landings-koden (forrige frame).
+    this.refuelBeam = null;        // settes til {x,y} på stasjonen vi fyller fra (for fuel-strålen)
     if (this.fuel < PHYSICS.fuelMax) {
       let refueling = this.grounded;
-      if (!refueling && Math.hypot(this.vx, this.vy) < REFUEL_SPEED && this.scene.map.fuelStations) {
+      // Nærmeste stasjon i rekkevidde (kun ved lav fart) → fyll + tegn stråle fra den.
+      if (Math.hypot(this.vx, this.vy) < REFUEL_SPEED && this.scene.map.fuelStations) {
+        let nd = Infinity;
         for (const f of this.scene.map.fuelStations) {
-          if (Math.hypot(f.x - this.x, f.y - this.y) < REFUEL_RANGE) { refueling = true; break; }
+          const d = Math.hypot(f.x - this.x, f.y - this.y);
+          if (d < REFUEL_RANGE && d < nd) { nd = d; this.refuelBeam = f; }
         }
+        if (this.refuelBeam) refueling = true;
       }
       if (refueling) this.fuel = Math.min(PHYSICS.fuelMax, this.fuel + PHYSICS.fuelRefill * dtScale);
     }
@@ -1776,24 +1788,46 @@ class Ship {
       } else {
         const cellTop = Math.floor(this.y / bs) * bs;
         const fromAbove = this.vy >= 0 && tileAt(wmap, this.x, cellTop - 1) !== 'x';
-        if (fromAbove && speed <= LAND_CRASH_SPEED) {
+        // Begge bein (±LAND_LEG) må ha solid under seg for stabil landing — ellers henger
+        // skipet ut over kanten og skal tippe/skli av (jf. hengende-skip-quirk).
+        const midY = cellTop + bs * 0.5;
+        const legL = tileAt(wmap, this.x - LAND_LEG, midY) === 'x';
+        const legR = tileAt(wmap, this.x + LAND_LEG, midY) === 'x';
+        if (fromAbove && speed <= LAND_CRASH_SPEED && legL && legR) {
           this.sprite.y = cellTop - LAND_MARGIN;     // skyv opp på flata
           this.vy = 0;
           this.vx *= PHYSICS.groundFriction;          // glir lateralt, bremses
           this.grounded = true;
+        } else if (fromAbove && speed <= LAND_CRASH_SPEED) {
+          // Overheng: bare ett bein støttet → ikke stabil. Skyv opp av penetrasjonen (ingen død),
+          // men IKKE grounded; dytt mot den USTØTTEDE siden så skipet sklir av kanten og faller.
+          this.sprite.y = cellTop - LAND_MARGIN;
+          if (this.vy > 0) this.vy = 0;
+          this.vx += (legL ? 1 : -1) * PHYSICS.tipSlide * dtScale;   // skli bort fra støtte-siden
         } else {
           this.die();                                 // side-/tak-treff eller for hardt
         }
       }
     } else if (this.vy >= 0) {
-      // Pre-emptiv landing rett før flaten nås (mykt, ingen penetrasjon).
+      // Pre-emptiv landing rett før flaten nås (mykt, ingen penetrasjon). Begge bein (±LAND_LEG)
+      // må ha solid under seg → stabil landing. Henger ett bein ut over kanten, TIPPER skipet av:
+      // et lite dytt mot den ustøttede siden så det sklir av kanten og faller (ingen død).
       const topBelow = (Math.floor(this.y / bs) + 1) * bs;
+      const midY = topBelow + bs * 0.5;
+      const legL = tileAt(wmap, this.x - LAND_LEG, midY) === 'x';
+      const legR = tileAt(wmap, this.x + LAND_LEG, midY) === 'x';
       if (tileAt(wmap, this.x, topBelow + 1) === 'x'
           && this.y > topBelow - LAND_MARGIN && speed < LAND_CRASH_SPEED) {
-        this.sprite.y = topBelow - LAND_MARGIN;
-        this.vy = 0;
-        this.vx *= PHYSICS.groundFriction;
-        this.grounded = true;
+        if (legL && legR) {
+          this.sprite.y = topBelow - LAND_MARGIN;
+          this.vy = 0;
+          this.vx *= PHYSICS.groundFriction;
+          this.grounded = true;
+        } else {
+          // Overheng: bare ett bein støttet → tipp av mot den ustøttede siden (sklir av og faller).
+          if (this.vy > 0) this.vy = 0;
+          this.vx += (legL ? 1 : -1) * PHYSICS.tipSlide * dtScale;
+        }
       }
     }
 
@@ -1898,6 +1932,10 @@ class GameScene extends Phaser.Scene {
       emitting: false,
     });
     this.explosion.setDepth(10);
+
+    // Fuel-stråle: pulserende blå linje fra depot til skip under fylling (XPilot-stil, lett
+    // organisk bølge). Tegnes på nytt hver frame i update() for alle skip med refuelBeam satt.
+    this.fuelBeam = this.add.graphics().setDepth(2).setBlendMode(Phaser.BlendModes.ADD);
 
     // Bullets
     this.bullets = [];
@@ -2084,7 +2122,17 @@ class GameScene extends Phaser.Scene {
     const ship   = shipSprite.getData('ship');
     if (!bullet || !ship || bullet.dead || !ship.alive) return;
     if (bullet.owner === ship) return;             // egen kule treffer ikke egen eier
-    if (ship.invuln > 0 || ship.shielded) { bullet.destroy(); return; }   // skjold/free-shield absorberer
+    if (ship.invuln > 0) { bullet.destroy(); return; }   // spawn-grace: verken skade eller dytt
+
+    // TR-II skuddstråle-dytt: kula overfører bevegelsesmengde til målet (impuls i kulas
+    // fartsretning). En tett stream dytter deg kontinuerlig → tungt å manøvrere «ut» av den.
+    // Gjelder OGSÅ gjennom skjold (skjoldet stopper skaden, ikke dyttet → pepret = skjøvet).
+    if (PHYSICS.bulletKnockback) {
+      const bv = bullet.sprite.body.velocity, bl = Math.hypot(bv.x, bv.y) || 1;
+      ship.vx += (bv.x / bl) * PHYSICS.bulletKnockback;
+      ship.vy += (bv.y / bl) * PHYSICS.bulletKnockback;
+    }
+    if (ship.shielded) { bullet.destroy(); return; }   // skjold absorberer skaden (men ikke dyttet)
 
     bullet.destroy();
     ship.hp -= PHYSICS.shotDamage;                 // skip tåler flere treff (Turboraketti-stil)
@@ -2122,6 +2170,35 @@ class GameScene extends Phaser.Scene {
       const cam = this.cameras.main;
       this.starFar.tilePositionX = cam.scrollX * 0.15;  this.starFar.tilePositionY = cam.scrollY * 0.15;
       this.starNear.tilePositionX = cam.scrollX * 0.40; this.starNear.tilePositionY = cam.scrollY * 0.40;
+    }
+
+    // Fuel-stråle: pulserende blå linje fra depot til hvert fyllende skip (lett organisk bølge,
+    // «energi» som flyter mot skipet). ADD-glød + lysere kjerne. Skip-farge-tonet kjerne.
+    if (this.fuelBeam) {
+      this.fuelBeam.clear();
+      const t = time * 0.001, pulse = 0.55 + 0.45 * Math.sin(t * 6);
+      for (const s of this.ships) {
+        if (!s.alive || !s.refuelBeam) continue;
+        const fx = s.refuelBeam.x, fy = s.refuelBeam.y, dx = s.x - fx, dy = s.y - fy;
+        const len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;   // normal for bølge
+        const SEG = 10, amp = 3.5;
+        const pts = [];
+        for (let i = 0; i <= SEG; i++) {
+          const u = i / SEG;
+          const env = Math.sin(u * Math.PI);                      // 0 ved endene, 1 på midten
+          const w = Math.sin(u * 14 - t * 12) * amp * env;        // bølge som flyter mot skipet
+          pts.push({ x: fx + dx * u + nx * w, y: fy + dy * u + ny * w });
+        }
+        const stroke = (width, color, alpha) => {
+          this.fuelBeam.lineStyle(width, color, alpha);
+          this.fuelBeam.beginPath(); this.fuelBeam.moveTo(pts[0].x, pts[0].y);
+          for (let i = 1; i < pts.length; i++) this.fuelBeam.lineTo(pts[i].x, pts[i].y);
+          this.fuelBeam.strokePath();
+        };
+        stroke(5, 0x2a6cff, 0.16 * pulse);                        // bred blå glød
+        stroke(2, 0x66b0ff, 0.45 * pulse);                        // midtre
+        stroke(1, (s.color || 0xddf0ff), 0.85 * pulse);           // lys kjerne (skip-tonet)
+      }
     }
 
     for (const ship of this.ships) ship.update(dtScale);
@@ -2196,6 +2273,7 @@ async function boot() {
   setupAIToggle();
   setupNewbieToggle();
   setupLookControl();
+  setupModeControl();
   buildTuningPanel();
 
   new Phaser.Game({
@@ -2223,6 +2301,14 @@ function readLook() {
   try { return localStorage.getItem(LOOK_KEY) || 'new'; } catch (e) { return 'new'; }
 }
 
+// Fysikk-modus: 'xpilot' (klassisk) eller 'trii' (TurboRaketti II — tettere skuddtakt, stream-dytt).
+// Bytter LIVE (ingen reload): re-anvender preset-baseline + per-modus lagrede justeringer.
+const MODE_KEY = 'ypilot.physicsMode';
+function readMode() {
+  try { return localStorage.getItem(MODE_KEY) === 'trii' ? 'trii' : 'xpilot'; }
+  catch (e) { return 'xpilot'; }
+}
+
 // Trad/New-look-velger. Reload ved bytte (rendringen bygges ved scene-create).
 function setupLookControl() {
   const sel = document.getElementById('look-select');
@@ -2231,6 +2317,20 @@ function setupLookControl() {
   sel.addEventListener('change', () => {
     try { localStorage.setItem(LOOK_KEY, sel.value); } catch (e) { /* privat modus */ }
     location.reload();
+  });
+}
+
+// Fysikk-modus-velger (XPilot/TR-II). LIVE — re-anvender modus-knottene og bygger panelet på
+// nytt (ingen reload). Hvert modus har sin egen lagrede tuning-tilstand (se applyMode/persistTuning).
+function setupModeControl() {
+  const sel = document.getElementById('mode-select');
+  if (!sel) return;
+  sel.value = readMode();
+  sel.addEventListener('change', () => {
+    persistTuning();                                       // lagre forrige modus' knotter først
+    try { localStorage.setItem(MODE_KEY, sel.value); } catch (e) { /* privat modus */ }
+    applyMode(sel.value);                                  // last nytt modus' baseline + overrides
+    buildTuningPanel();                                    // oppdater slider-verdiene i panelet
   });
 }
 
@@ -2252,6 +2352,7 @@ const TUNING = [
   { g: 'Bevegelse', key: 'fuelBoost',     label: 'Drivstoff-boost',min: 0,   max: 0.7,  step: 0.05,  get: () => PHYSICS.fuelBoost,    set: v => PHYSICS.fuelBoost = +v },
   // — Landing —
   { g: 'Landing',   key: 'groundFriction',label: 'Friksjon',      min: 0.7,  max: 1,    step: 0.01,  get: () => PHYSICS.groundFriction, set: v => PHYSICS.groundFriction = +v },
+  { g: 'Landing',   key: 'tipSlide',      label: 'Tipp-skli',     min: 0,    max: 1,    step: 0.05,  get: () => PHYSICS.tipSlide,     set: v => PHYSICS.tipSlide = +v },
   { g: 'Landing',   key: 'landCrash',     label: 'Krasj-fart',    min: 3,    max: 12,   step: 0.5,   get: () => LAND_CRASH_SPEED,     set: v => LAND_CRASH_SPEED = +v },
   { g: 'Landing',   key: 'uprightRate',   label: 'Opprett-rate',  min: 0.01, max: 0.2,  step: 0.01,  get: () => UPRIGHT_RATE,         set: v => UPRIGHT_RATE = +v },
   // — Drivstoff —
@@ -2271,6 +2372,7 @@ const TUNING = [
   { g: 'Kamp',      key: 'blastRadius',   label: 'Blast-vidde',   min: 32,   max: 320,  step: 16,    get: () => PHYSICS.blastRadius,  set: v => PHYSICS.blastRadius = +v },
   { g: 'Kamp',      key: 'bulletSpeed',   label: 'Kulefart',      min: 6,    max: 24,   step: 1,     get: () => PHYSICS.bulletSpeed,  set: v => PHYSICS.bulletSpeed = +v },
   { g: 'Kamp',      key: 'fireCooldown',  label: 'Skyte-pause',   min: 4,    max: 30,   step: 1,     get: () => PHYSICS.fireCooldown, set: v => PHYSICS.fireCooldown = +v },
+  { g: 'Kamp',      key: 'bulletKnockback', label: 'Skudd-dytt',  min: 0,    max: 2,    step: 0.1,   get: () => PHYSICS.bulletKnockback, set: v => PHYSICS.bulletKnockback = +v },
   // — Visuelt —
   { g: 'Visuelt',   key: 'round',         label: 'Avrunding',     min: 0,    max: 6,    step: 1,     get: () => ROUNDING,             set: v => { ROUNDING = clampRound(v); if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'organic',       label: 'Organisk',      min: 0,    max: 24,   step: 1,     get: () => ORGANIC,              set: v => { ORGANIC = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
@@ -2282,22 +2384,105 @@ const TUNING = [
   { g: 'Visuelt',   key: 'stars',         label: 'Stjerner',      min: 0,    max: 2,    step: 0.1,   get: () => STARS,                set: v => { STARS = +v; if (GAME_SCENE) applyStarVisibility(GAME_SCENE); } },
 ];
 
+// ── Fysikk-modus (XPilot / TR-II) ──────────────────────────────────────────
+// Hvilke faner er modus-spesifikke (resten — Visuelt — er GLOBALT, delt mellom modi). Hvert
+// modus = kode-default → preset-delta → per-modus lagrede justeringer (egen localStorage-nøkkel).
+const MODE_TABS = ['Bevegelse', 'Landing', 'Drivstoff', 'Kamp'];
+const isModeKnob = t => MODE_TABS.includes(t.g);
+const modeTuningKey = mode => TUNING_KEY + '.' + mode;     // ypilot.tuning.xpilot / .trii
+
+// Preset-DELTAER fra kode-defaults — kun det vi vet skiller spillene. Resten arver kode-default
+// og finjusteres per modus via sliderne (lagres per modus). Fyll på flere forskjeller etter hvert.
+const PRESETS = {
+  xpilot: { fireCooldown: 11, bulletKnockback: 0   },   // klassisk: moderat takt, kuler dytter ikke
+  trii:   { fireCooldown: 6,  bulletKnockback: 0.7 },   // TR-II: tett skuddstråle + tydelig dytt
+};
+
+// Kode-defaults fanget ÉN gang ved boot (rene PHYSICS-literal-verdiene), FØR preset/lagret
+// anvendes — basis for applyMode (reset → preset → override) og for inaktivt modus i eksport.
+let DEFAULTS = null;
+function captureDefaults() {
+  DEFAULTS = {};
+  for (const t of TUNING) DEFAULTS[t.key] = t.get();
+}
+
+// Effektive modus-knott-verdier UTEN å røre live-tilstand (brukes for eksport av inaktivt modus).
+// Presedens: kode-default < preset-delta < lagret per-modus override. Ved FØRSTE gangs migrering
+// (intet per-modus-lager ennå) arves gammel flat ypilot.tuning som baseline — men da lar vi de
+// preset-distingverte knottene (fireCooldown/knockback) beholde PRESET-verdien, ellers ville den
+// gamle flate tuningen visket ut modus-forskjellen du nettopp ba om.
+function modeValues(mode) {
+  let saved = null, fromLegacy = false;
+  try { saved = JSON.parse(localStorage.getItem(modeTuningKey(mode)) || 'null'); } catch (e) { /* */ }
+  if (!saved) { fromLegacy = true; try { saved = JSON.parse(localStorage.getItem(TUNING_KEY) || '{}'); } catch (e) { saved = {}; } }
+  const preset = PRESETS[mode] || {}, out = {};
+  for (const t of TUNING) {
+    if (!isModeKnob(t)) continue;
+    let v = DEFAULTS[t.key];
+    if (preset[t.key] !== undefined) v = preset[t.key];
+    const ov = saved[t.key];
+    if (ov !== undefined && !Number.isNaN(+ov) && !(fromLegacy && preset[t.key] !== undefined)) v = +ov;
+    out[t.key] = v;
+  }
+  return out;
+}
+
+// Anvend et modus på live-tilstand: sett hver modus-knott til sin beregnede verdi.
+function applyMode(mode) {
+  const vals = modeValues(mode);
+  for (const t of TUNING) if (isModeKnob(t) && vals[t.key] !== undefined) t.set(vals[t.key]);
+}
+
 // Anvend lagrede tuning-verdier (kalles i boot FØR Phaser, så PHYSICS m.m. starter tunet).
 function loadTuning() {
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem(TUNING_KEY) || '{}'); } catch (e) { /* privat modus */ }
-  for (const t of TUNING) if (saved[t.key] !== undefined && !Number.isNaN(+saved[t.key])) t.set(saved[t.key]);
+  captureDefaults();                       // rene literal-verdier før noe anvendes
+  // Globale (Visuelt) knotter fra den flate ypilot.tuning.
+  let g = {};
+  try { g = JSON.parse(localStorage.getItem(TUNING_KEY) || '{}'); } catch (e) { /* privat modus */ }
+  for (const t of TUNING) if (!isModeKnob(t) && g[t.key] !== undefined && !Number.isNaN(+g[t.key])) t.set(g[t.key]);
+  // Modus-spesifikke knotter: preset-baseline + lagrede per-modus-justeringer for aktivt modus.
+  applyMode(readMode());
 }
 function persistTuning() {
-  const snap = {};
-  for (const t of TUNING) snap[t.key] = t.get();
-  try { localStorage.setItem(TUNING_KEY, JSON.stringify(snap)); } catch (e) { /* privat modus */ }
+  const g = {}, m = {};
+  for (const t of TUNING) (isModeKnob(t) ? m : g)[t.key] = t.get();    // globalt vs aktivt modus
+  try {
+    localStorage.setItem(TUNING_KEY, JSON.stringify(g));                // Visuelt (delt)
+    localStorage.setItem(modeTuningKey(readMode()), JSON.stringify(m)); // aktivt modus
+  } catch (e) { /* privat modus */ }
 }
-// Komplett øyeblikksbilde for eksport (inkl. gravitasjon + look som bor utenfor TUNING).
+// Komplett øyeblikksbilde for eksport — gruppert (JSON-aktig) per Tuning-fane, med brett-navn/
+// -key + look + gravitasjon øverst. Hver verdi som «key (Label)» så det er lett å peke ut én knott
+// («Gass-bruk på brett xxx = …, bruk som default»). Verdiene utenfor TUNING (gravitasjon/look) først.
 function exportTuning() {
-  const snap = { look: readLook(), gravity: +(+GRAVITY).toFixed(4) };
-  for (const t of TUNING) snap[t.key] = +(+t.get()).toFixed(4);
-  return JSON.stringify(snap, null, 2);
+  const sel = document.getElementById('map-select');
+  const active = readMode();
+  const out = {
+    kart: (MAP && MAP.name) || 'ukjent',
+    kartKey: sel ? sel.value : undefined,
+    look: readLook(),
+    gravitasjon: +(+GRAVITY).toFixed(4),
+    modus: active,
+  };
+  // Modus-spesifikke knotter: én seksjon per modus (aktivt = live-verdier, inaktivt = beregnet).
+  const liveVals = {};
+  for (const t of TUNING) if (isModeKnob(t)) liveVals[t.key] = t.get();
+  const sectionFor = vals => {
+    const o = {};
+    for (const g of MODE_TABS) {
+      const grp = {};
+      for (const t of TUNING.filter(t => t.g === g)) grp[`${t.key} (${t.label})`] = +(+vals[t.key]).toFixed(4);
+      o[g] = grp;
+    }
+    return o;
+  };
+  out.xpilot = sectionFor(active === 'xpilot' ? liveVals : modeValues('xpilot'));
+  out.trii   = sectionFor(active === 'trii'   ? liveVals : modeValues('trii'));
+  // Globale (Visuelt) knotter — delt mellom modi.
+  const vis = {};
+  for (const t of TUNING.filter(t => t.g === 'Visuelt')) vis[`${t.key} (${t.label})`] = +(+t.get()).toFixed(4);
+  out.Visuelt = vis;
+  return JSON.stringify(out, null, 2);
 }
 
 function buildTuningPanel() {

@@ -33,6 +33,17 @@ Diagnostisert 2026-06-09.
 
 ## Andre parkerte ting
 
+- **Drivstoff-knapphet på TR-II-konverterte brett (framtidig).** Klassiske XPilot-brett har X
+  spawn-punkter + Y fuel-depots (`#`). De TR-II-konverterte brettene har INGEN fuel-depots, og
+  motoren lar deg lande + fuele sakte på ALLE flate topper → for lett (ingen drivstoff-press).
+  Fiks: (a) «tegn»/plasser fuel-depots på TR-II-brett ved konvertering (retrorocket), og (b)
+  ikke tillat landing/fylling «overalt» — begrens til depots/baser (evt. en per-kart-flagg om
+  flate-landing er lov). Jf. memory [[drivstoff-og-liv]] (dagens «fuel ved hovring + landing»).
+  - **Marker lovlige landingsflater med farge** (Tommys forslag): ORANSJE neon = nøytrale
+    fuel-depots/landingsflater (varm farge skiller seg tydelig fra cyan/blå vegger). SKIP-/
+    LAG-FARGE neon = egne baser (jf. XPilot lag-baser `_`/`0`–`9`) → ser «din» plass vs.
+    fiendens. Begge kan sameksistere. Gir umiddelbar lesbarhet for hvor man kan lande/fylle.
+
 - ✅ **«Fyll» veggene med organisk mycel-nettverk** — GJORT. `buildMycel` + `solidDepthField`
   i game.js: vener seedes fra vegg-kantene (BFS-dybde 1) og vokser INNOVER i solid (styrt av
   dybde-gradient + hash-jitter + forgrening), tegnes som ADD-glødelinjer med kromatisk-

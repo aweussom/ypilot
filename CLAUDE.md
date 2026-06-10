@@ -70,6 +70,21 @@ innomhus-flekken (`findMoonSpot`, BFS-avstand-til-vegg, margin fra kant), skaler
 størrelse (C&H ≈ 2,2×). Tunbar «Stjerner»-slider (Visuelt, 0 = av). `makeSpaceTextures`/
 `createStarfield` i game.js; tekstur-tiles genereres én gang per økt.
 
+**Fuel-stråle ✅:** pulserende blå linje fra fuel-depot til skip under fylling (XPilot-stil, lett
+organisk bølge som «flyter» mot skipet). `Ship` setter `this.refuelBeam` til nærmeste stasjon i
+rekkevidde; `GameScene.update` tegner alle stråler i én ADD-`fuelBeam`-Graphics (bred glød + lys
+skip-tonet kjerne). Kun ved depot-fylling (ikke ren bakke-landing).
+
+**Begge-bein-landing ✅:** en stabil landing krever nå at BEGGE bein (±`LAND_LEG`) har solid under
+seg. Henger ett bein ut over kanten → skipet grounder ikke, men dyttes mot den ustøttede siden
+(`PHYSICS.tipSlide`, tunbar «Tipp-skli» i Landing) og sklir av kanten og faller (ingen død).
+Gjelder begge landings-grener i `Ship.update`. Hindrer å «parkere» hengende på et hjørne.
+
+**Eksport gruppert + brett ✅:** «Eksporter» (`exportTuning`) gir nå gruppert JSON — `kart`/
+`kartKey`/`look`/`gravitasjon` øverst, så hver Tuning-fane (Bevegelse/Landing/…) med
+`«key (Label)»: verdi`. Gjør det lett å peke ut én knott for ett brett («Gass-bruk på kits = …,
+bruk som default»). localStorage `ypilot.tuning` er fortsatt flat (for direkte avlesning).
+
 **Newbie-modus (auto-shield) ✅:** live-toggle «Newbie» i bunnlinja (global `NEWBIE`, persistert
 `ypilot.newbie`). PÅ → menneske-skip auto-skjolder rett før vegg-treff (fart-skalert føler langs
 fartsretning i `Ship.update`), og et skjoldet treff spretter ALLTID (dødelig-fart slått av for
