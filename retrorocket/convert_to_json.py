@@ -133,9 +133,13 @@ def main():
     grav_zones, liquid_zones = [], []
     for z in g['zones']:
         rect = {'col': to_cell(z['x']), 'row': to_cell(z['y']),
-                'cols': max(1, to_cell(z['w'])), 'rows': max(1, to_cell(z['h']))}
+                'cols': max(1, to_cell(z['w'])), 'rows': max(1, to_cell(z['h'])),
+                'fx': z['fx'], 'fy': z['fy']}
+        # Begge sone-typer beholder kraftvektoren (fx,fy): væske har egen oppdrift/strøm
+        # (likvidius4p: 0 -0.016 = bobler opp), gravitasjonsfelt har sin retning. En sone kan
+        # være både 'g' og 'l'. Motoren lar sone-kraften ERSTATTE global gravitasjon innenfor.
         if z['liquid']: liquid_zones.append(rect)
-        if z['gravity']: grav_zones.append({**rect, 'fx': z['fx'], 'fy': z['fy']})
+        if z['gravity']: grav_zones.append(rect)
 
     name = re.sub(r'\.game$', '', os.path.basename(game_path)).replace('_', ' ')
     out = {

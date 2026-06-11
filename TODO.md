@@ -2,23 +2,34 @@
 
 Bevisst utsatte oppgaver (parkert, ikke glemt).
 
-## Wormholes (`@` / `(` / `)`)
+## ✅ FERDIG: Wormholes (`@` / `(` / `)`) — 2026-06-11
 
-XPilot-wormholes — kjernemekanikk flere kart er avhengige av. `(` = inngang,
-`)` = utgang, `@` = begge. Et skip som treffer en inngang teleporteres til en
-**tilfeldig** utgang (fart bevart, kort cooldown så man ikke re-trigger ved utgangen).
+XPilot-wormholes. `(` = inngang, `)` = utgang, `@` = begge. Et skip som treffer en inngang
+teleporteres til en **tilfeldig** utgang (fart bevart, cooldown `PHYSICS.wormholeCooldown` så
+man ikke re-trigger ved utgangen).
 
-**Hvorfor:** flere kart har baser i lukkede 1-celle-rør med en `(` på toppen — man
-skal akselerere opp i wormholen og teleporteres ut i arenaen. Uten dette blir basene
-uunnslippelige feller (f.eks. `arena2` «Arena» 100×100, med `(`×10 `)`×10 `@`×2).
-Diagnostisert 2026-06-09.
+**Implementert:** `xpilot_tools.py` + `ascii_to_json.py` trekker ut `wormholes:[{col,row,type}]`
+(cellene forblir åpne). `buildMapFromJson` bærer dem celle→px. `Ship.update` teleporterer (per-
+skip `wormholeCd`). Neon-ringer i `renderMap` (cyan inn / magenta ut / hvit begge), pulserer.
+**Testkart:** `arena2` (konvertert, 22 wormholes — 10 in / 10 out / 2 both). Baser i lukkede rør
+er nå nåbare.
 
-**Plan:**
-- Konverter (`retrorocket/xpilot_tools.py` + `convert_to_json.py`): trekk ut
-  `wormholes: [{col,row,type:'in'|'out'|'both'}]`; cellene forblir åpne.
-- Motor (`game.js`): i `Ship.update`, treff på inn/`@`-celle → teleportér til en
-  tilfeldig ut/`@`-celle, behold fart, sett kort cooldown.
-- Konsekvens: kart der baser kun nås via wormhole (arena2) blir spillbare.
+## ✅ FERDIG: TR-II-soner — revers-gravitasjon + syre-bad — 2026-06-11
+
+TR-IIs `zone`-konsept (fra `.game`: `zone x y w h fx fy g|l`). `convert_to_json.py` henter
+`gravityZones`/`liquidZones` med kraftvektor (liquid beholder nå òg `fx,fy`).
+- **Sone-kraft ERSTATTER global gravitasjon** innenfor (`zoneAt` + `Ship.update`); revers/sideveis
+  følger av `fx,fy`-fortegn. Tunbar skala `PHYSICS.zoneForce` (fane «Soner»).
+- **Syre-bad** (liquid): «spiser» skjoldet (rask drivstoff-dren mens skjold oppe), tærer skroget
+  uten skjold (hp-skade → død); oppdrift fra sonens `fy`. Spawn-grace beskytter. Tunbart
+  `acidShieldDrain`/`acidHullDamage`.
+- Sone-overlays i `renderMap` (fiolett grav m/retningspil, grønn syre) + på radaren.
+- **Testkart:** `likvidius4p` (syre-sone `0 -0.016 l`), `ekolos4p` (grav-sone `0 -0.02`).
+
+## ✅ FERDIG: Radar (toggle) — 2026-06-11
+
+Minimap instansieres nå ALLTID (både fit- og scroll-modus), styrt av en live `Radar`-toggle i
+bunnlinja (`RADAR`, persistert `ypilot.radar`, default på). Soner + fuel + skip vises i oversikten.
 
 ## Fase 3 — Turboraketti-lag (parkert til senere)
 

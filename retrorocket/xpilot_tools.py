@@ -32,7 +32,7 @@ def parse_xpilot(text, name=None):
     R = _int(header.get('mapheight')) or len(grid)
     C = _int(header.get('mapwidth')) or (max((len(r) for r in grid), default=0))
 
-    tiles, spawns, fuel = [], [], []
+    tiles, spawns, fuel, wormholes = [], [], [], []
     for r in range(R):
         src = grid[r] if r < len(grid) else ''
         row = []
@@ -43,6 +43,13 @@ def parse_xpilot(text, name=None):
                 spawns.append({'col': c, 'row': r, 'player': int(ch) if ch.isdigit() else len(spawns)})
             elif ch == '#':
                 fuel.append({'col': c, 'row': r})
+            # Wormholes (XPilot): '(' = inngang, ')' = utgang, '@' = begge. Cellen er åpen.
+            elif ch == '(':
+                wormholes.append({'col': c, 'row': r, 'type': 'in'})
+            elif ch == ')':
+                wormholes.append({'col': c, 'row': r, 'type': 'out'})
+            elif ch == '@':
+                wormholes.append({'col': c, 'row': r, 'type': 'both'})
         tiles.append(row)
 
     ew = header.get('edgewrap', '').lower() != 'no' and header.get('edgebounce', '').lower() != 'yes'
@@ -55,7 +62,7 @@ def parse_xpilot(text, name=None):
     return {'name': header.get('mapname') or name or 'kart', 'source': 'XPilot',
             'cols': C, 'rows': R, 'cellPx': 32, 'tiles': tiles, 'spawns': spawns,
             'fuelStations': fuel, 'edgewrap': ew, 'gravity': grav,
-            'gravityZones': [], 'liquidZones': []}
+            'gravityZones': [], 'liquidZones': [], 'wormholes': wormholes}
 
 def metrics(m):
     cells = m['cols'] * m['rows']
@@ -96,8 +103,9 @@ def main():
         m = parse_xpilot(open(sys.argv[2], encoding='utf-8', errors='replace').read(), os.path.basename(sys.argv[2]))
         json.dump(m, open(sys.argv[3], 'w', encoding='utf-8'), separators=(',', ':'))
         mt = metrics(m)
-        print("OK %s  %dx%d  vegg%%=%s spawns=%d fuel=%d wrap=%s -> %s"
-              % (m['name'], mt['w'], mt['h'], mt['wallPct'], mt['spawns'], mt['fuel'], mt['wrap'], sys.argv[3]))
+        print("OK %s  %dx%d  vegg%%=%s spawns=%d fuel=%d wormholes=%d wrap=%s -> %s"
+              % (m['name'], mt['w'], mt['h'], mt['wallPct'], mt['spawns'], mt['fuel'],
+                 len(m['wormholes']), mt['wrap'], sys.argv[3]))
 
 if __name__ == "__main__":
     main()

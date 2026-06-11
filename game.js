@@ -72,6 +72,13 @@ const PHYSICS = {
   // — Landing —
   groundFriction: 0.92, // vx beholdt per frame ved bakke-kontakt (høyere = glir lengre)
   tipSlide:     0.25,   // px/frame² — dytt mot ustøttet side når bare ett bein har grunn (tipper av) [tunbar]
+  // — Soner (TR-II) + wormholes —
+  zoneForce:    3.5,    // skala på sonens kraftvektor (fx,fy fra .game ~0.016–0.02) → YPilot-aksel.
+                        //   En sone ERSTATTER global gravitasjon innenfor: revers/sideveis følger av
+                        //   fortegn. Default sterk nok til at en oppadsone klart løfter. [tunbar, Soner]
+  acidShieldDrain: 2.5, // ekstra drivstoff/frame mens skjold er oppe i syre («spiser skjoldet») [Soner]
+  acidHullDamage: 0.05, // hp/frame uten skjold i syre (shipHP=5 → ~1.7s til død) — spawn-grace beskytter [Soner]
+  wormholeCooldown: 24, // frames etter en teleport før et skip kan re-trigge (hindrer loop ved utgang)
 };
 
 // AI-oppførsel (heuristisk). Vinkler i rad; fireRange/lookahead/keepDistance i blokker.
@@ -378,6 +385,7 @@ function buildMapFromJson(j) {
     .sort((a, b) => (a.player ?? 0) - (b.player ?? 0))
     .map(s => ({ x: (s.col + 0.5) * bs, y: (s.row + 0.5) * bs, angle: -Math.PI / 2 }));
   const fuelStations = (j.fuelStations || []).map(f => ({ x: (f.col + 0.5) * bs, y: (f.row + 0.5) * bs }));
+  const wormholes = (j.wormholes || []).map(w => ({ x: (w.col + 0.5) * bs, y: (w.row + 0.5) * bs, type: w.type }));
   if (spawns.length === 0) {            // fallback: kvart-punkter
     for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]])
       spawns.push({ x: fx * j.cols * bs, y: fy * j.rows * bs, angle: -Math.PI / 2 });
@@ -387,7 +395,7 @@ function buildMapFromJson(j) {
     widthPx: j.cols * bs, heightPx: j.rows * bs,
     tiles, edgewrap: j.edgewrap !== false, gravity: j.gravity || 0, cog: null,
     fuelStations, spawns, name: j.name || 'kart', header: {},
-    gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], source: j.source,
+    gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], wormholes, source: j.source,
   };
 }
 
@@ -407,6 +415,19 @@ function tileAt(map, px, py) {
   const r = Math.floor(py / map.blockSize);
   if (r < 0 || r >= map.rows || c < 0 || c >= map.cols) return ' ';
   return map.tiles[r][c];
+}
+
+// Sonen et pikselpunkt ligger i (celle-koords {col,row,cols,rows,fx,fy}). Liquid (syre) prioriteres
+// over rene gravitasjons-soner ved overlapp. Returnerer {fx, fy, liquid} eller null. Sone-kraften
+// ERSTATTER global gravitasjon innenfor (se Ship.update). Billig: linje-søk, få soner per kart.
+function zoneAt(map, px, py) {
+  const c = Math.floor(px / map.blockSize), r = Math.floor(py / map.blockSize);
+  const inRect = z => c >= z.col && c < z.col + z.cols && r >= z.row && r < z.row + z.rows;
+  if (map.liquidZones) for (const z of map.liquidZones)
+    if (inRect(z)) return { fx: z.fx || 0, fy: z.fy || 0, liquid: true };
+  if (map.gravityZones) for (const z of map.gravityZones)
+    if (inRect(z)) return { fx: z.fx || 0, fy: z.fy || 0, liquid: false };
+  return null;
 }
 
 // Drivstoff-skalering for rakettbruk: store kart krever mye thrust for å fly over, så
@@ -839,6 +860,52 @@ function renderMap(scene, map) {
   }
   scene.fuelGfx = fuelGfx;
 
+  // Sone-overlays (TR-II): gravitasjons-felt + væske/syre. Statisk lag, ADD, under skip/vegg.
+  // Gravitasjon = fiolett fyll + retnings-piler (langs fx,fy). Syre = giftig-grønt fyll med
+  // lysere topp-kant (væske-overflate). Hjelper spilleren se hvor fysikken endrer seg.
+  let zoneGfx = null;
+  const gravZ = map.gravityZones || [], liqZ = map.liquidZones || [];
+  if (gravZ.length || liqZ.length) {
+    zoneGfx = scene.add.graphics().setDepth(0.5).setBlendMode(Phaser.BlendModes.ADD);
+    const drawZone = (z, fill, edge) => {
+      const x = z.col * bs, y = z.row * bs, w = z.cols * bs, h = z.rows * bs;
+      zoneGfx.fillStyle(fill, 0.12);
+      zoneGfx.fillRect(x, y, w, h);
+      zoneGfx.lineStyle(2, edge, 0.5);
+      zoneGfx.strokeRect(x, y, w, h);
+      // Kraft-retning: en pil fra senter langs (fx,fy).
+      const mag = Math.hypot(z.fx || 0, z.fy || 0);
+      if (mag > 1e-6) {
+        const cx = x + w / 2, cy = y + h / 2, len = Math.min(w, h) * 0.3;
+        const ux = (z.fx || 0) / mag, uy = (z.fy || 0) / mag;
+        const ex = cx + ux * len, ey = cy + uy * len;
+        zoneGfx.lineStyle(2, edge, 0.8);
+        zoneGfx.lineBetween(cx - ux * len, cy - uy * len, ex, ey);
+        const a = Math.atan2(uy, ux);
+        zoneGfx.lineBetween(ex, ey, ex - Math.cos(a - 0.4) * 7, ey - Math.sin(a - 0.4) * 7);
+        zoneGfx.lineBetween(ex, ey, ex - Math.cos(a + 0.4) * 7, ey - Math.sin(a + 0.4) * 7);
+      }
+    };
+    for (const z of gravZ) drawZone(z, 0x8844ff, 0xaa66ff);   // fiolett gravitasjons-felt
+    for (const z of liqZ)  drawZone(z, 0x33ff66, 0x66ff99);   // giftig-grønn syre/væske
+  }
+  scene.zoneGfx = zoneGfx;
+
+  // Wormholes (XPilot): neon-ringer. Inngang cyan, utgang magenta, 'both' hvit. Pulsen animeres
+  // i GameScene.update via alpha. Statisk geometri tegnes én gang her.
+  let wormGfx = null;
+  if (map.wormholes && map.wormholes.length) {
+    wormGfx = scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
+    const rad = bs * 0.45;
+    for (const w of map.wormholes) {
+      const col = w.type === 'in' ? 0x00ffff : w.type === 'out' ? 0xff00ff : 0xffffff;
+      wormGfx.lineStyle(2, col, 0.9);
+      wormGfx.strokeCircle(w.x, w.y, rad);
+      wormGfx.strokeCircle(w.x, w.y, rad * 0.55);
+    }
+  }
+  scene.wormGfx = wormGfx;
+
   // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
   scene.wallMap = map;
   scene.rawLoops = (readLook() !== 'trad') ? traceWallLoops(map) : null;
@@ -1090,6 +1157,13 @@ class Minimap {
         }
       }
     }
+    // Soner (gravitasjon = fiolett, syre/væske = grønn) som svake fylte rektangler.
+    const zrect = (z, col) => {
+      g.fillStyle(col, 0.22);
+      g.fillRect(z.col * bs * s, z.row * bs * s, z.cols * bs * s, z.rows * bs * s);
+    };
+    for (const z of (this.map.gravityZones || [])) zrect(z, 0x8844ff);
+    for (const z of (this.map.liquidZones || []))  zrect(z, 0x33ff66);
     // Fuel-stasjoner som små grønne prikker.
     if (this.map.fuelStations) {
       g.fillStyle(FUEL_COLOR, 0.9);
@@ -1107,6 +1181,13 @@ class Minimap {
     this.frameGfx.setPosition(ox, oy);
     this.wallGfx.setPosition(ox, oy);
     this.dotGfx.setPosition(ox, oy);
+  }
+
+  // Vis/skjul hele radaren (RADAR-toggle). Når skjult sluttes også update() (se updateCamera).
+  setVisible(on) {
+    this.frameGfx.setVisible(on);
+    this.wallGfx.setVisible(on);
+    this.dotGfx.setVisible(on);
   }
 
   // Dynamisk lag: kamera-utsyn-ramme, kuler, skip-prikker. Tegnes hver frame.
@@ -1527,6 +1608,7 @@ class Ship {
     this.alive = true;
     this.invuln = 0;
     this.fireTimer = 0;
+    this.wormholeCd = 0;     // nedtelling etter en wormhole-teleport (hindrer re-trigge ved utgang)
     this.respawnTimer = 0;
     this.takeoverTimer = 0;
     this.shielded = false;
@@ -1675,11 +1757,31 @@ class Ship {
       this.spawnFloat = false;   // gass = man er i kontroll → gravitasjonen på umiddelbart
     }
 
-    // Global gravitasjon (nedover) — AV kun mens spawn-flyten varer (nyspawnet OG ikke gjort
-    // noe ennå), så et skip som spawner «ute i ingenting» ikke dras rett i en vegg. Så snart
-    // man gir gass (eller skyter → invuln=0) slår den inn, så flyturen fra spawn matcher
-    // resten av kartet (thrust−gravitasjon, ikke full netto-thrust).
-    if (!(this.invuln > 0 && this.spawnFloat)) this.vy += GRAVITY * dtScale;
+    // Gravitasjon / sone-kraft. En sone (TR-II gravitasjons-felt ELLER væske) ERSTATTER global
+    // gravitasjon innenfor — revers/sideveis følger av fx,fy-fortegn. Ellers vanlig nedover-grav.
+    // AV kun mens spawn-flyten varer (nyspawnet OG ikke gjort noe ennå), så et skip som spawner
+    // «ute i ingenting» ikke dras rett i en vegg; så snart man gir gass (eller skyter → invuln=0)
+    // slår den inn, så flyturen fra spawn matcher resten av kartet (thrust−gravitasjon).
+    const zone = zoneAt(this.scene.map, this.x, this.y);
+    if (!(this.invuln > 0 && this.spawnFloat)) {
+      if (zone) {
+        this.vx += zone.fx * PHYSICS.zoneForce * dtScale;
+        this.vy += zone.fy * PHYSICS.zoneForce * dtScale;
+      } else {
+        this.vy += GRAVITY * dtScale;
+      }
+    }
+
+    // Syre-bad (væske-sone): «spiser» skjoldet (rask drivstoff-dren mens skjold er oppe) og tærer
+    // skroget når du IKKE har skjold (hp-skade → død). Synergi: når syra har spist drivstoffet
+    // faller skjoldet av (fuel=0) og skroget begynner å ta skade. Spawn-grace (invuln) beskytter.
+    if (zone && zone.liquid) {
+      if (this.shielded) this.fuel -= PHYSICS.acidShieldDrain * dtScale;
+      else if (this.invuln <= 0) {
+        this.hp -= PHYSICS.acidHullDamage * dtScale;
+        if (this.hp <= 0) this.die();
+      }
+    }
 
     // Litt drag → terminal-fart, så et fall ikke akselererer i det uendelige.
     // PHYSICS.drag = 1 gir rent friksjonsløst vakuum.
@@ -1700,6 +1802,27 @@ class Ship {
     this.sprite.y += this.vy * dtScale;
     wrapObject(this.scene.map, this.sprite);
     this.sprite.setRotation(this.angle);
+
+    // Wormholes (XPilot): treffer skipet en inngang ('in'/'both') → teleportér til en tilfeldig
+    // utgang ('out'/'both'), BEHOLD farten, og sett cooldown så man ikke umiddelbart re-trigger
+    // ved utgangen. Fri tilgang til ellers innelukkede baser (rør med '(' på toppen).
+    if (this.wormholeCd > 0) this.wormholeCd -= dtScale;
+    const whs = this.scene.map.wormholes;
+    if (this.wormholeCd <= 0 && whs && whs.length) {
+      const bs = this.scene.map.blockSize;
+      const wc = Math.floor(this.x / bs), wr = Math.floor(this.y / bs);
+      const here = whs.find(w => (w.type === 'in' || w.type === 'both')
+        && Math.floor(w.x / bs) === wc && Math.floor(w.y / bs) === wr);
+      if (here) {
+        const exits = whs.filter(w => w !== here && (w.type === 'out' || w.type === 'both'));
+        const pool = exits.length ? exits : whs.filter(w => w !== here);   // fallback: hvilken som helst annen
+        if (pool.length) {
+          const dst = pool[Math.floor(Math.random() * pool.length)];
+          this.sprite.setPosition(dst.x, dst.y);              // fart (vx,vy) bevares med vilje
+          this.wormholeCd = PHYSICS.wormholeCooldown;
+        }
+      }
+    }
 
     // Jeteksos
     if (thrusting) {
@@ -2029,8 +2152,6 @@ class GameScene extends Phaser.Scene {
       cam.setZoom(1);
       const t = this.humanShips[0];
       if (t) cam.centerOn(t.x, t.y);
-      this.minimap = new Minimap(this, this.map);
-      this.scale.on('resize', () => this.minimap && this.minimap.reposition());
     } else {
       const fit = () => {
         cam.setZoom(FIT * Math.min(cam.width / this.map.widthPx, cam.height / this.map.heightPx));
@@ -2039,15 +2160,21 @@ class GameScene extends Phaser.Scene {
       fit();
       this.scale.on('resize', fit);
     }
+    // Radar (minimap) — opprettes ALLTID, både fit- og scroll-modus (XPilot-radar). Synlighet
+    // styres live av RADAR-toggelen; skjermfestet (setScrollFactor 0), så den funker i begge modus.
+    this.minimap = new Minimap(this, this.map);
+    this.minimap.setVisible(RADAR);
+    this.scale.on('resize', () => this.minimap && this.minimap.reposition());
   }
 
   // Sentrer scroll-kameraet på menneskets nåværende skip (endres ved takeover). Sentrering
   // er momentan så et wrap ser riktig ut (verden wrappet → utsynet wrapper også).
   updateCamera() {
-    if (!this.scrollMode) return;
-    const t = this.humanShips[0];
-    if (t) this.cameras.main.centerOn(t.x, t.y);
-    if (this.minimap) this.minimap.update();
+    if (this.scrollMode) {
+      const t = this.humanShips[0];
+      if (t) this.cameras.main.centerOn(t.x, t.y);
+    }
+    if (this.minimap && RADAR) this.minimap.update();
   }
 
   onEliminated(ship) {
@@ -2163,6 +2290,8 @@ class GameScene extends Phaser.Scene {
       }
       if (this.neon.fuel) this.neon.fuel.setAlpha(0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3)));
     }
+    // Wormhole-ringer pulserer raskere (virvel-følelse).
+    if (this.wormGfx) this.wormGfx.setAlpha(0.6 + 0.4 * (0.5 + 0.5 * Math.sin(time * 0.006)));
 
     // Parallax-starfield: stjernelagene (uendelig fjernt) drifter saktere enn verden (dybde).
     // Månen er verdens-festet (egen world-posisjon) → kamera håndterer den, ingen per-frame her.
@@ -2272,6 +2401,7 @@ async function boot() {
   setupMapSelector(sel);
   setupAIToggle();
   setupNewbieToggle();
+  setupRadarToggle();
   setupLookControl();
   setupModeControl();
   buildTuningPanel();
@@ -2294,6 +2424,10 @@ function readAIOn() {
 // automatisk rett før vegg-treff, og et skjoldet treff spretter alltid (ingen dødelig-fart).
 const NEWBIE_KEY = 'ypilot.newbie';
 let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) === 'on'; } catch (e) { return false; } })();
+
+// Radar (minimap) — default PÅ; lagres 'off' når slått av. Leses live av minimap-laget.
+const RADAR_KEY = 'ypilot.radar';
+let RADAR = (() => { try { return localStorage.getItem(RADAR_KEY) !== 'off'; } catch (e) { return true; } })();
 
 // Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
 const LOOK_KEY = 'ypilot.look';
@@ -2382,6 +2516,9 @@ const TUNING = [
   { g: 'Visuelt',   key: 'triFill',       label: 'Trekanter',     min: 0,    max: 2,    step: 0.1,   get: () => TRI_FILL,             set: v => { TRI_FILL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'bevel',         label: 'Bevel',         min: 0,    max: 0.5,  step: 0.05,  get: () => BEVEL,                set: v => { BEVEL = +v; if (GAME_SCENE) rebuildNeonWalls(GAME_SCENE, ROUNDING); } },
   { g: 'Visuelt',   key: 'stars',         label: 'Stjerner',      min: 0,    max: 2,    step: 0.1,   get: () => STARS,                set: v => { STARS = +v; if (GAME_SCENE) applyStarVisibility(GAME_SCENE); } },
+  { g: 'Soner',     key: 'zoneForce',     label: 'Sone-kraft',    min: 0,    max: 8,    step: 0.5,   get: () => PHYSICS.zoneForce,     set: v => PHYSICS.zoneForce = +v },
+  { g: 'Soner',     key: 'acidShield',    label: 'Syre-skjold',   min: 0,    max: 6,    step: 0.5,   get: () => PHYSICS.acidShieldDrain, set: v => PHYSICS.acidShieldDrain = +v },
+  { g: 'Soner',     key: 'acidHull',      label: 'Syre-skrog',    min: 0,    max: 0.3,  step: 0.01,  get: () => PHYSICS.acidHullDamage, set: v => PHYSICS.acidHullDamage = +v },
 ];
 
 // ── Fysikk-modus (XPilot / TR-II) ──────────────────────────────────────────
@@ -2594,6 +2731,18 @@ function setupNewbieToggle() {
   cb.addEventListener('change', () => {
     NEWBIE = cb.checked;
     try { localStorage.setItem(NEWBIE_KEY, NEWBIE ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+  });
+}
+
+// Radar-toggle. LIVE — viser/skjuler minimap-laget umiddelbart (ingen reload).
+function setupRadarToggle() {
+  const cb = document.getElementById('radar-toggle');
+  if (!cb) return;
+  cb.checked = RADAR;
+  cb.addEventListener('change', () => {
+    RADAR = cb.checked;
+    try { localStorage.setItem(RADAR_KEY, RADAR ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+    if (GAME_SCENE && GAME_SCENE.minimap) GAME_SCENE.minimap.setVisible(RADAR);
   });
 }
 

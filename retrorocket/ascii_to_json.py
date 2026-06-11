@@ -25,7 +25,7 @@ def main():
 
     cols = max(len(r) for r in rows_txt)
     rows = len(rows_txt)
-    tiles, spawns, fuel = [], [], []
+    tiles, spawns, fuel, wormholes = [], [], [], []
     for r, line in enumerate(rows_txt):
         row = []
         for c in range(cols):
@@ -38,12 +38,19 @@ def main():
                     spawns.append({'col': c, 'row': r, 'player': len(spawns)})
                 elif ch == '#':
                     fuel.append({'col': c, 'row': r})
+                elif ch == '(':                          # wormhole inngang/utgang/begge
+                    wormholes.append({'col': c, 'row': r, 'type': 'in'})
+                elif ch == ')':
+                    wormholes.append({'col': c, 'row': r, 'type': 'out'})
+                elif ch == '@':
+                    wormholes.append({'col': c, 'row': r, 'type': 'both'})
         tiles.append(row)
 
     data = {
         'name': name, 'source': source, 'cols': cols, 'rows': rows, 'cellPx': 24,
         'tiles': tiles, 'spawns': spawns, 'fuelStations': fuel,
         'edgewrap': edgewrap, 'gravity': 0.0, 'gravityZones': [], 'liquidZones': [],
+        'wormholes': wormholes,
     }
     json.dump(data, open(out, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
     wall = sum(sum(r) for r in tiles)

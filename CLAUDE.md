@@ -103,8 +103,16 @@ Detalj kjører 60 FPS (verifisert på Kits 200×200). **Nøkkel:** i Phaser 4 m�
 kalles etter `dt.draw(...)` for å flushe kommandobufferet (forrige RT-forsøk glemte dette).
 Cap 4096 + skalering for store kart; live-graphics-fallback beholdt. Se `TODO.md`.
 
-**NESTE OPPGAVER:** lyd (Solstice-motor, memory `audio-fra-solstice`), wormholes (`TODO.md`),
-radar, «fyll vegg-innside med mycel-nettverk» (`TODO.md`).
+**Wormholes + TR-II-soner + radar ✅ (2026-06-11):** wormholes (`@`/`(`/`)` → teleport, fart
+bevart, per-skip cooldown; `xpilot_tools.py` trekker dem ut, `arena2` konvertert med 22 stk).
+TR-II-`zone`-er tatt i bruk: en sone ERSTATTER global gravitasjon innenfor (`zoneAt`+`Ship.update`,
+revers/sideveis via `fx,fy`) → revers-gravitasjons-regioner; **syre-bad** (liquid) spiser skjoldet
++ tærer skrog uten skjold + oppdrift (`likvidius4p` konvertert). Sone-overlays + wormhole-ringer i
+`renderMap` + radar. Radar er nå en alltid-tilgjengelig minimap med live `Radar`-toggle (bunnlinje).
+Nye tunbare i fane «Soner» (`zoneForce`/`acidShieldDrain`/`acidHullDamage`).
+
+**NESTE OPPGAVER:** lyd (utsatt til Fase 3 — Solstice-motor, memory `audio-fra-solstice`),
+«fyll vegg-innside»-RE-THINK (`TODO.md`), Fase 3 push-off/fraspark (`TODO.md`).
 
 > **Stor-kart-begrensning (kjent):** scroll-kameraet sentrerer momentant på skipet, så
 > på wrap-kart vises tomrom utenfor kartkanten (ingen toroidal dobbel-rendering ennå).
