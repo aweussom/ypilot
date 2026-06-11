@@ -404,6 +404,11 @@ function buildMapFromJson(j) {
     .map(s => ({ x: (s.col + 0.5) * bs, y: (s.row + 0.5) * bs, angle: -Math.PI / 2 }));
   const fuelStations = (j.fuelStations || []).map(f => ({ x: (f.col + 0.5) * bs, y: (f.row + 0.5) * bs }));
   const wormholes = (j.wormholes || []).map(w => ({ x: (w.col + 0.5) * bs, y: (w.row + 0.5) * bs, type: w.type }));
+  // Pads (TR-II): celle-geometri + px for markører/landing-sjekk. row = pad-ens TOPP solide rad.
+  const pads = (j.pads || []).map(p => ({
+    col: p.col, row: p.row, cols: p.cols, type: p.type, player: p.player,
+    x: p.col * bs, y: p.row * bs, w: p.cols * bs,
+  }));
   if (spawns.length === 0) {            // fallback: kvart-punkter
     for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]])
       spawns.push({ x: fx * j.cols * bs, y: fy * j.rows * bs, angle: -Math.PI / 2 });
@@ -413,7 +418,8 @@ function buildMapFromJson(j) {
     widthPx: j.cols * bs, heightPx: j.rows * bs,
     tiles, edgewrap: j.edgewrap !== false, gravity: j.gravity || 0, cog: null,
     fuelStations, spawns, name: j.name || 'kart', header: {},
-    gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], wormholes, source: j.source,
+    gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], wormholes,
+    pads, closedLanding: !!j.closedLanding, source: j.source,
   };
 }
 
@@ -446,6 +452,16 @@ function zoneAt(map, px, py) {
   if (map.gravityZones) for (const z of map.gravityZones)
     if (inRect(z)) return { fx: z.fx || 0, fy: z.fy || 0, liquid: false };
   return null;
+}
+
+// Er pikselpunktet på en landings-pad (TR-II)? Pads er solide, men ved closedLanding er KUN pads
+// trygge å lande på — annet terreng = krasj. Celle-medlemskap i pad-rektangelet (topp 2 solide rader).
+function onLandingPad(map, px, py) {
+  if (!map.pads) return false;
+  const c = Math.floor(px / map.blockSize), r = Math.floor(py / map.blockSize);
+  for (const p of map.pads)
+    if (c >= p.col && c < p.col + p.cols && r >= p.row && r <= p.row + 1) return true;
+  return false;
 }
 
 // Drivstoff-skalering for rakettbruk: store kart krever mye thrust for å fly over, så
@@ -890,9 +906,18 @@ function renderMap(scene, map) {
     zoneGfx = scene.add.graphics().setDepth(0.5).setBlendMode(Phaser.BlendModes.ADD);
     const drawZone = (z, fill, edge) => {
       const x = z.col * bs, y = z.row * bs, w = z.cols * bs, h = z.rows * bs;
-      zoneGfx.fillStyle(fill, 0.12);
-      zoneGfx.fillRect(x, y, w, h);
-      zoneGfx.lineStyle(2, edge, 0.5);
+      // Trekant-mesh-fyll (samme stil som de solide sonene, se fillTrad): per celle delt indre
+      // topp-/venstre-kant + anti-diagonal → to trekanter. Fyller sonen «pent» i stedet for en
+      // flat firkant. Dim ADD i sonens farge; lysere ramme rundt.
+      zoneGfx.lineStyle(1, fill, 0.25);
+      for (let rr = 0; rr < z.rows; rr++)
+        for (let cc = 0; cc < z.cols; cc++) {
+          const cx0 = x + cc * bs, cy0 = y + rr * bs;
+          if (rr > 0) zoneGfx.lineBetween(cx0, cy0, cx0 + bs, cy0);   // indre topp-kant
+          if (cc > 0) zoneGfx.lineBetween(cx0, cy0, cx0, cy0 + bs);   // indre venstre-kant
+          zoneGfx.lineBetween(cx0, cy0 + bs, cx0 + bs, cy0);          // anti-diagonal
+        }
+      zoneGfx.lineStyle(2, edge, 0.6);
       zoneGfx.strokeRect(x, y, w, h);
       // Kraft-retning: en pil fra senter langs (fx,fy).
       const mag = Math.hypot(z.fx || 0, z.fy || 0);
@@ -926,6 +951,21 @@ function renderMap(scene, map) {
     }
   }
   scene.wormGfx = wormGfx;
+
+  // Pads (TR-II): TYKK neon-strek på pad-overflaten. Hjem = spillerens farge (din base vs fiendens),
+  // fuel = grønn, butikk/garasje = oransje. Markerer hvor det er trygt å lande (closedLanding).
+  if (map.pads && map.pads.length) {
+    const homePal = [COLORS.p1, COLORS.p2, 0xffcc33, 0x66ff66, 0xff6688, 0xaa88ff];
+    const padGfx = scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
+    for (const p of map.pads) {
+      const col = p.type === 'home' ? homePal[(p.player || 0) % homePal.length]
+                : p.type === 'fuel' ? FUEL_COLOR : 0xff9933;   // øvrige (butikk/garasje) = oransje
+      const x0 = p.x, x1 = p.x + p.w, y = p.y;                 // pad-overflatens topp-kant
+      padGfx.lineStyle(5, col, 0.5); padGfx.lineBetween(x0, y, x1, y);   // bred glød
+      padGfx.lineStyle(2, col, 1);   padGfx.lineBetween(x0, y, x1, y);   // lys kjerne
+    }
+    scene.padGfx = padGfx;
+  }
 
   // Cache rå konturer for «new» (Chaikin påføres ved (re)bygging → billig avrunding-slider).
   scene.wallMap = map;
@@ -1950,12 +1990,12 @@ class Ship {
       if (this.invuln > 0) { this.invuln = 0; this.sprite.setAlpha(1); }
     }
 
-    // Fylling — hvile på bakken lader sakte (TurboRaketti: tank opp på/ved base; hindrer
-    // også soft-lock når man er tom og landet på et kart uten stasjoner), ELLER hovre sakte
-    // nær en fuel-stasjon (#). `this.grounded` settes i landings-koden (forrige frame).
+    // Fylling — KUN ved å hovre sakte nær en fuel-pod (#). Pods ligger ved hver base + er sprinklet
+    // over kartet, så man tanker uten å lande (nødvendig når landing er begrenset til pads). Tidligere
+    // «hvil på hvilken som helst flate = fyll» er fjernet → ekte drivstoff-press.
     this.refuelBeam = null;        // settes til {x,y} på stasjonen vi fyller fra (for fuel-strålen)
     if (this.fuel < PHYSICS.fuelMax) {
-      let refueling = this.grounded;
+      let refueling = false;
       // Nærmeste stasjon i rekkevidde (kun ved lav fart) → fyll + tegn stråle fra den.
       if (Math.hypot(this.vx, this.vy) < REFUEL_SPEED && this.scene.map.fuelStations) {
         let nd = Infinity;
@@ -1996,6 +2036,8 @@ class Ship {
           this.sprite.y += this.vy * dtScale * PHYSICS.bounceKick;
           this.fuel -= PHYSICS.shieldDrain * 2 * dtScale;
         }
+      } else if (wmap.closedLanding && !onLandingPad(wmap, this.x, this.y)) {
+        this.die();                                 // TR-II: KUN pads er trygge å lande på → Kaboom
       } else {
         const cellTop = Math.floor(this.y / bs) * bs;
         const fromAbove = this.vy >= 0 && tileAt(wmap, this.x, cellTop - 1) !== 'x';
@@ -2027,8 +2069,11 @@ class Ship {
       const midY = topBelow + bs * 0.5;
       const legL = tileAt(wmap, this.x - LAND_LEG, midY) === 'x';
       const legR = tileAt(wmap, this.x + LAND_LEG, midY) === 'x';
+      // closedLanding: bare pre-land hvis flaten under er en pad — ellers la skipet falle videre
+      // ned i cellen → penetrasjons-grenen over tar Kaboom neste frame.
       if (tileAt(wmap, this.x, topBelow + 1) === 'x'
-          && this.y > topBelow - LAND_MARGIN && speed < LAND_CRASH_SPEED) {
+          && this.y > topBelow - LAND_MARGIN && speed < LAND_CRASH_SPEED
+          && (!wmap.closedLanding || onLandingPad(wmap, this.x, topBelow + bs * 0.5))) {
         if (legL && legR) {
           this.sprite.y = topBelow - LAND_MARGIN;
           this.vy = 0;

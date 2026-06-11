@@ -15,6 +15,7 @@
 import sys, struct, os, json, re
 
 OPEN, SOLID = 0, 1   # tile-koder (skråninger 2..5 reservert til senere)
+POD_SPACING = 22     # celler mellom sprinklede fuel-pods (lavere = flere pods/mer drivstoff)
 
 def read_info(prefix):
     return struct.unpack('<3i', open(prefix + "_Info.bin", 'rb').read()[:12])  # mode,w,h
@@ -81,12 +82,14 @@ def parse_game(path):
             # platform x y width <flags...>   (flags: 'h N' = hjem spiller N, g/a/b/r)
             x, y, wdt = int(tok[1]), int(tok[2]), int(tok[3])
             flags = tok[4:]
-            p = {'x': x, 'y': y, 'w': wdt, 'home': None, 'fuel': False}
+            p = {'x': x, 'y': y, 'w': wdt, 'home': None, 'fuel': False, 'kind': 'pad'}
             i = 0
             while i < len(flags):
                 f = flags[i]
-                if f == 'h' and i+1 < len(flags): p['home'] = int(flags[i+1]); i += 2; continue
-                if f == 'g': p['fuel'] = True
+                if f == 'h' and i+1 < len(flags): p['home'] = int(flags[i+1]); p['kind'] = 'home'; i += 2; continue
+                if f == 'g': p['fuel'] = True; p['kind'] = 'fuel'
+                elif f in ('a', 'b'): p['kind'] = 'shop'        # våpenbutikk (Fase 3)
+                elif f == 'r': p['kind'] = 'garage'             # garasje/reparasjon (Fase 3)
                 i += 1
             g['platforms'].append(p)
         elif k == 'zone':
@@ -112,7 +115,7 @@ def main():
     grid, cols, rows = downsample(mask, w, h, cell, solid_frac)
 
     def to_cell(px): return px // cell
-    spawns, fuel = [], []
+    spawns, fuel, pads = [], [], []
     for p in g['platforms']:
         # TRII-plattformer er solide utskytnings-pads, men ligger IKKE i terreng-collision-
         # laget. Stempl pad-en som solid (2 celler tykk) og plassér spawn/fuel rett OVER den,
@@ -126,9 +129,12 @@ def main():
         center = (c0 + c1) // 2
         top = max(0, prow - 1)                  # hvile-celle rett over pad-en
         grid[top][center] = OPEN                # sørg for at den er åpen (carve)
+        # Pad-geometri (topp-rad + bredde + type) for tykke neon-markører + lovlig-landing-sjekk.
+        pads.append({'col': c0, 'row': prow, 'cols': c1 - c0 + 1, 'type': p['kind'], 'player': p['home']})
         if p['home'] is not None:
             spawns.append({'col': center, 'row': top, 'player': p['home']})
-        if p['fuel']:
+            fuel.append({'col': center, 'row': top})    # fuel-pod ved HVER base → fyll med XPilot-koden
+        elif p['fuel']:
             fuel.append({'col': center, 'row': top})
     grav_zones, liquid_zones = [], []
     for z in g['zones']:
@@ -141,6 +147,19 @@ def main():
         if z['liquid']: liquid_zones.append(rect)
         if z['gravity']: grav_zones.append(rect)
 
+    # Sprinkle fuel-pods liberalt over åpne celler (XPilot-stil hover-fyll). Når landing er
+    # begrenset til pads (closedLanding) MÅ man kunne tanke uten å lande → pods rundt kartet.
+    # Hopp over solide celler og væske-soner (vil ikke lokke spilleren ned i syra).
+    def in_liquid(c, r):
+        for z in liquid_zones:
+            if z['col'] <= c < z['col'] + z['cols'] and z['row'] <= r < z['row'] + z['rows']: return True
+        return False
+    seen = {(f['col'], f['row']) for f in fuel}
+    for r in range(POD_SPACING // 2, rows, POD_SPACING):
+        for c in range(POD_SPACING // 2, cols, POD_SPACING):
+            if grid[r][c] == OPEN and (c, r) not in seen and not in_liquid(c, r):
+                fuel.append({'col': c, 'row': r}); seen.add((c, r))
+
     name = re.sub(r'\.game$', '', os.path.basename(game_path)).replace('_', ' ')
     out = {
         'name': name, 'source': 'TurboRaketti II', 'cols': cols, 'rows': rows,
@@ -148,6 +167,9 @@ def main():
         # TR-II-arenaer er LUKKEDE (solid kant, ingen toroidal wrap) — uten dette defaulter
         # buildMapFromJson til edgewrap=true, som gir radar/AI/blast feil «korteste vei rundt kanten».
         'edgewrap': False,
+        # TR-II: landing KUN på pads (spawn/plattformer) — alt annet terreng = krasj. pads = geometri
+        # for markører + lovlig-landing-sjekk.
+        'closedLanding': True, 'pads': pads,
         'gravityZones': grav_zones, 'liquidZones': liquid_zones,
     }
     json.dump(out, open(out_path, 'w'), separators=(',', ':'))
