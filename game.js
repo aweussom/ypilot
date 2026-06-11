@@ -76,8 +76,13 @@ const PHYSICS = {
   zoneForce:    3.5,    // skala på sonens kraftvektor (fx,fy fra .game ~0.016–0.02) → YPilot-aksel.
                         //   En sone ERSTATTER global gravitasjon innenfor: revers/sideveis følger av
                         //   fortegn. Default sterk nok til at en oppadsone klart løfter. [tunbar, Soner]
-  acidShieldDrain: 2.5, // ekstra drivstoff/frame mens skjold er oppe i syre («spiser skjoldet») [Soner]
-  acidHullDamage: 0.05, // hp/frame uten skjold i syre (shipHP=5 → ~1.7s til død) — spawn-grace beskytter [Soner]
+  acidShieldDrain: 1.0, // ekstra drivstoff/frame mens skjold er oppe i syre («spiser skjoldet») [Soner]
+  acidHullDamage: 0.01, // hp/frame uten skjold i syre, ETTER grace (shipHP=5 → ~8s til død etter grace)
+                        //   — spawn-grace (invuln) beskytter helt. Lavt: man skal TÅLE syra lenge. [Soner]
+  acidGrace:    180,    // frames (~3s) i syra FØR skroget begynner å ta skade → kjør gjennom mange
+                        //   ganger trygt; bare lingering i ~10s+ dreper (TR-II-følelse). [tunbar, Soner]
+  acidRecover:  2.5,    // hvor raskt syre-klokka nullstilles når du er UTE av syra (× dtScale) → korte
+                        //   dypp hoper seg ikke opp; må bli værende lenge for å dø. [tunbar, Soner]
   wormholeCooldown: 24, // frames etter en teleport før et skip kan re-trigge (hindrer loop ved utgang)
 };
 
@@ -90,7 +95,7 @@ const AI = {
   lookahead:    2,      // blokker — vegg-føler fram
   sensorAngle:  0.6,    // rad — venstre/høyre-føler
   avoidTurn:    0.8,    // rad — vri bort fra vegg
-  keepDistance: 3,      // blokker — hold avstand til mål
+  keepDistance: 5,      // blokker — hold avstand til mål (større = mindre crowding/ramming av målet)
   // — Increment 2.5: prediktiv sikting, skjold-refleks, gravitasjons-kompensasjon —
   // («target practice»-nivå: overlev og skyt fornuftig, ikke jakt aggressivt.)
   leadMax:      75,     // frames — maks ledetid for prediktiv sikting (ellers sikt på nåposisjon)
@@ -106,8 +111,21 @@ const AI = {
   // — «Hender»: menneskelig finger-treghet. Min. tid (ms) mellom hver gang boten kan FLIPPE
   //   sving-retning (a/d) eller toggle gass (w/s). Uten dette twitcher den frame-perfekt og blir
   //   urealistisk presis. Høyere = grovere sikting/hovring → litt mindre god. Snappy ved nødbrems.
-  handReact:    90,     // ms — sving-retning (venstre↔høyre)
-  handThrust:   120,    // ms — gass på↔av
+  handReact:    90,     // ms — sving-retning (venstre↔høyre) — skaleres av reactMult (vanskelighetsgrad)
+  handThrust:   120,    // ms — gass på↔av — skaleres av reactMult
+  // — Anti-skip-selvmord: skip-mot-skip-kollisjon DREPER begge (se overlap-handler i create()),
+  //   så boten må aktivt holde avstand til andre skip (repulsjon) + nødbremse om et skip er rett
+  //   foran langs fartsretningen. Uten dette flyr botene rett på målet og dør i kollisjonen. —
+  shipAvoidDist:  6.0,  // blokker — innenfor dette dyttes styringen vekk fra et annet skip (stor boble;
+                        //   må være romslig så head-ons rekker å vike før de lukker)
+  shipAvoidForce: 3.2,  // styrke på radial-repulsjonen (relativt til enhets-bevegelsesvektoren ~1)
+  shipDodge:      2.4,  // styrke på TANGENTIAL utvike når et skip er rett foran (head-on) → vik til
+                        //   siden i stedet for å bremse på samme linje. Konsistent regel → to bots
+                        //   passerer på hver sin side. Dette er hovedvåpenet mot frontal-selvmord.
+  // — Vanskelighetsgrad (settes av applyBotLevel fra BOT_LEVELS; tunbare via «Bot»-fanen). —
+  aimError:     0.12,   // rad — treg tilfeldig bias på lede-vinkelen → dårligere bots bommer mer
+  fireChance:   0.65,   // sjanse pr. skyte-klar frame for faktisk å avfyre → lavere = sjeldnere skudd
+  reactMult:    1.2,    // multiplikator på hand-react/thrust (>1 = tregere/dårligere reflekser)
 };
 
 // Bot-multiplayer (free-for-all): mange skip på små baner; menneskene + bots.
@@ -474,14 +492,17 @@ function makeTextures(scene) {
   g.clear();
 
   // Bot-skip: TIE-fighter — sentral pod + to vinge-paneler + liten nese-stubb (retning).
+  // Panelene sitter på SIDENE (vinkelrett på fartsaksen +x), ikke foran/bak — som en ekte TIE:
+  // pod fremst, eksos rett bakover (−x) MELLOM panelene. (Før lå panelene langs x-aksen, så
+  // jetstrålen kom ut «den flate siden» = det bakre panelet — feil.)
   g.lineStyle(2, 0xffffff, 1);
-  g.strokeCircle(16, 16, 5);
+  g.strokeCircle(16, 16, 5);            // cockpit-pod
   g.beginPath();
-  g.moveTo(7, 4);   g.lineTo(7, 28);    // venstre panel
-  g.moveTo(25, 4);  g.lineTo(25, 28);   // høyre panel
-  g.moveTo(11, 16); g.lineTo(7, 16);    // strut venstre
-  g.moveTo(21, 16); g.lineTo(25, 16);   // strut høyre
-  g.moveTo(21, 16); g.lineTo(29, 16);   // nese-stubb (hinter retning)
+  g.moveTo(6, 6);   g.lineTo(26, 6);    // øvre panel (langs fartsaksen, forskjøvet opp = én side)
+  g.moveTo(6, 26);  g.lineTo(26, 26);   // nedre panel (andre side)
+  g.moveTo(16, 11); g.lineTo(16, 6);    // strut opp
+  g.moveTo(16, 21); g.lineTo(16, 26);   // strut ned
+  g.moveTo(21, 16); g.lineTo(29, 16);   // nese-stubb (+x = framover; eksos går ut −x mellom panelene)
   g.strokePath();
   g.generateTexture('ship-bot', 32, 32);
   g.clear();
@@ -1110,6 +1131,19 @@ const MINIMAP = {
   dotPlayer: 5, dotShip: 3, dotBullet: 1.2,
 };
 
+// Spider-sense («radar»): WiFi-bølge-buer ved menneske-skipet, på siden mot nærmeste trusler.
+// Intensitet/antall buer ↑ jo nærmere. Fiende-skip i fiendens farge; prosjektiler i egen gul,
+// dusere farge (tunbar følelse). Erstatter hjørne-minimapet. Verdens-rom, ADD-glød.
+const SENSE = {
+  shipRange:   40,       // blokker — falloff-avstand for fiende-skip-intensitet (IKKE en grense:
+                         //   skip vises alltid når de er off-screen, men daler i styrke til shipFloor)
+  shipFloor:   0.32,     // minste intensitet for fjerne off-screen-skip (forsvinner aldri helt)
+  bulletRange: 24,       // blokker — HARD grense for innkommende kuler (kule tvers over kartet = ikke trussel)
+  bulletColor: 0xffe066, // gul — skiller prosjektiler fra fiende-skip
+  bulletDim:   0.55,     // intensitets-multiplikator for prosjektiler (dusere enn skip)
+  baseR: 17, gap: 9, spread: 0.55,   // innerste bue-radius (px), avstand mellom buer, halv-vinkel
+};
+
 class Minimap {
   constructor(scene, map) {
     this.scene = scene;
@@ -1124,14 +1158,26 @@ class Minimap {
 
     // Tre lag: bakgrunn (normal blend, demper), vegger (ADD-neon, statisk),
     // prikker (ADD, tegnes på nytt hver frame).
-    this.frameGfx = scene.add.graphics().setScrollFactor(0).setDepth(20);
-    this.wallGfx = scene.add.graphics().setScrollFactor(0).setDepth(21)
+    // Verdens-rom (IKKE setScrollFactor(0)): forankres mot kameraets skjermhjørne hver frame og
+    // motskaleres med 1/zoom (se anchor()). Et skjerm-festet (scrollFactor 0) minimap ble nemlig
+    // SKALERT/forskjøvet av hovedkameraets zoom i fit-modus (zoom≠1) → usynlig på 2-spiller-kart.
+    this.frameGfx = scene.add.graphics().setDepth(20);
+    this.wallGfx = scene.add.graphics().setDepth(21)
       .setBlendMode(Phaser.BlendModes.ADD);
-    this.dotGfx = scene.add.graphics().setScrollFactor(0).setDepth(22)
+    this.dotGfx = scene.add.graphics().setDepth(22)
       .setBlendMode(Phaser.BlendModes.ADD);
 
     this.drawStatic();
     this.reposition();
+  }
+
+  // Forankre de tre lagene i verdens-rom mot kameraets nedre-høyre skjermhjørne, motskalert med
+  // 1/zoom så minimapet alltid har samme skjermstørrelse/-plass uansett fit/scroll-zoom.
+  anchor() {
+    const cam = this.scene.cameras.main, z = cam.zoom || 1, s = 1 / z;
+    const x = cam.scrollX + (viewW() - this.w - MINIMAP.margin) * s;
+    const y = cam.scrollY + (viewH() - this.h - MINIMAP.margin) * s;
+    for (const g of [this.frameGfx, this.wallGfx, this.dotGfx]) { g.setPosition(x, y); g.setScale(s); }
   }
 
   // Bakgrunn + vegger + fuel — tegnes én gang (statisk). Vegger slås sammen til
@@ -1174,14 +1220,8 @@ class Minimap {
     g.strokeRect(0, 0, this.w, this.h);
   }
 
-  // Plasser de tre lagene nederst til høyre (kalles ved oppstart + resize).
-  reposition() {
-    const ox = viewW() - this.w - MINIMAP.margin;
-    const oy = viewH() - this.h - MINIMAP.margin;
-    this.frameGfx.setPosition(ox, oy);
-    this.wallGfx.setPosition(ox, oy);
-    this.dotGfx.setPosition(ox, oy);
-  }
+  // Kalles ved oppstart + resize. Selve plasseringen gjøres i anchor() (verdens-rom, hver frame).
+  reposition() { this.anchor(); }
 
   // Vis/skjul hele radaren (RADAR-toggle). Når skjult sluttes også update() (se updateCamera).
   setVisible(on) {
@@ -1192,6 +1232,7 @@ class Minimap {
 
   // Dynamisk lag: kamera-utsyn-ramme, kuler, skip-prikker. Tegnes hver frame.
   update() {
+    this.anchor();                       // følg kameraet (verdens-rom) hver frame
     const s = this.scale, g = this.dotGfx;
     g.clear();
 
@@ -1477,6 +1518,16 @@ function makeAIProvider(self, scene) {
       if (t > 0 && t < AI.leadMax) leadBearing = Math.atan2(dy + vry * t, dx + vrx * t);
     }
 
+    // Sikte-feil (vanskelighetsgrad): en TREG tilfeldig bias på lede-vinkelen (re-rulles et par
+    // ganger i sekundet, ikke frame-jitter) → dårligere bots sikter konsekvent litt feil og bommer.
+    // Påvirker både styring-mot-sikte og skyte-porten (begge bruker leadBearing). 0 = perfekt.
+    {
+      const am = self._aim || (self._aim = { bias: 0, t: 0 });
+      if (AI.aimError <= 0) am.bias = 0;
+      else if ((scene.time.now - am.t) >= 220) { am.bias = (Math.random() - 0.5) * 2 * AI.aimError; am.t = scene.time.now; }
+      leadBearing += am.bias;
+    }
+
     // Bevegelses-retning: fri sikt → jag direkte; ellers BFS-rute rundt veggene. Skiller
     // FLYGE-retning (rundt hindringer) fra SIKTE-retning (leadBearing, mot ekte mål).
     const moveBearing = navSteerBearing(self, scene, map, target, dx, dy, dist, leadBearing);
@@ -1497,6 +1548,39 @@ function makeAIProvider(self, scene) {
         }
       }
     }
+
+    // Anti-skip-selvmord: skip-mot-skip-kollisjon dreper begge. Hold avstand til ALLE levende skip
+    // (også usårbare — du dør av å treffe dem). (a) repulsjon (avoidX/Y) som dyttes inn i styringen,
+    // og (b) nødbrems hvis et skip er nært RETT foran langs fartsretningen.
+    let avoidX = 0, avoidY = 0;
+    for (const o of scene.ships) {
+      if (o === self || !o.alive || o.eliminated) continue;
+      let ox = o.x - self.x, oy = o.y - self.y;
+      if (map.edgewrap) {
+        if (Math.abs(ox) > W / 2) ox -= Math.sign(ox) * W;
+        if (Math.abs(oy) > H / 2) oy -= Math.sign(oy) * H;
+      }
+      const od = Math.hypot(ox, oy) || 1;
+      if (od < bs * AI.shipAvoidDist) {
+        const push = (1 - od / (bs * AI.shipAvoidDist)) * AI.shipAvoidForce;
+        avoidX -= (ox / od) * push; avoidY -= (oy / od) * push;     // radial: dytt vekk fra skipet
+        // Tangential UTVIKE når skipet er foran langs farten (head-on/innhenting): vik til siden i
+        // stedet for å bremse på samme linje. Rotér «mot skipet»-retningen 90° med en KONSISTENT
+        // regel (−oy, ox) → to bots på kollisjonskurs velger motsatt fysisk side og passerer hverandre.
+        if (speed > 0.5) {
+          const fwd = (self.vx * ox + self.vy * oy) / speed;          // avstand langs fartsretning
+          if (fwd > 0) {
+            const align = Math.min(1, fwd / od);                      // ~1 = rett foran (head-on)
+            const dodge = align * push * AI.shipDodge;
+            avoidX += (-oy / od) * dodge; avoidY += (ox / od) * dodge;
+            // Siste utvei: skip rett foran OG svært nært → skjold opp (overlever kollisjonen).
+            const lat = Math.abs(self.vx * oy - self.vy * ox) / speed;
+            if (od < bs * 2 && lat < bs * 1.3) dangerClose = true;
+          }
+        }
+      }
+    }
+
     // Nær-proximitets-skjold: enhver USKJOLDET vegg-berøring dreper (unntatt myk topp-landing),
     // så selv sakte graze i trange korridorer var dødelig. Skjold ved ENHVER nær fare (uavhengig
     // av fart) når vi er under dødelig-fart og har drivstoff → boten spretter i stedet for å dø.
@@ -1533,8 +1617,8 @@ function makeAIProvider(self, scene) {
       // GRAVITY/thrustForce. Slik bobler boten oppe i stedet for å synke ned i gulvet — også
       // mens den svinger unna en vegg. På gravitasjonsløse kart (GRAVITY≈0) faller dette
       // tilbake til «sikt/styr mot målet».
-      const accX = tgtX;
-      const accY = tgtY - (GRAVITY > 0 ? (GRAVITY / PHYSICS.thrustForce) * AI.gravComp : 0);
+      const accX = tgtX + avoidX;                               // + skip-repulsjon (anti-krasj)
+      const accY = tgtY + avoidY - (GRAVITY > 0 ? (GRAVITY / PHYSICS.thrustForce) * AI.gravComp : 0);
       if (accX === 0 && accY === 0) { desired = leadBearing; }   // hold stilling, bare sikt
       else { desired = Math.atan2(accY, accX); allowThrust = true; }
     }
@@ -1564,8 +1648,8 @@ function makeAIProvider(self, scene) {
     while (df > Math.PI) df -= 2 * Math.PI;
     while (df < -Math.PI) df += 2 * Math.PI;
     if (allowFire && !cmd.shield && Math.abs(df) < AI.fireCone && dist < bs * AI.fireRange
-        && lineClear(map, self.x, self.y, dx, dy, dist)) {
-      cmd.fire = true;
+        && lineClear(map, self.x, self.y, dx, dy, dist) && Math.random() < AI.fireChance) {
+      cmd.fire = true;   // fireChance (vanskelighetsgrad): tynner ut skuddene for svakere bots
     }
 
     // «Hender»: begrens hvor ofte rotasjons-retning/gass kan endres (finger-treghet). Snappy
@@ -1576,8 +1660,8 @@ function makeAIProvider(self, scene) {
     if (danger) {                                   // full kontroll: hold hånd-tilstand i sync
       hand.rot = desRot; hand.thr = desThr; hand.rotT = now; hand.thrT = now;
     } else {
-      if (desRot !== hand.rot && (now - hand.rotT) >= AI.handReact)  { hand.rot = desRot; hand.rotT = now; }
-      if (desThr !== hand.thr && (now - hand.thrT) >= AI.handThrust) { hand.thr = desThr; hand.thrT = now; }
+      if (desRot !== hand.rot && (now - hand.rotT) >= AI.handReact * AI.reactMult)  { hand.rot = desRot; hand.rotT = now; }
+      if (desThr !== hand.thr && (now - hand.thrT) >= AI.handThrust * AI.reactMult) { hand.thr = desThr; hand.thrT = now; }
       cmd.left = hand.rot < 0; cmd.right = hand.rot > 0; cmd.thrust = hand.thr;
     }
     return cmd;
@@ -1609,6 +1693,7 @@ class Ship {
     this.invuln = 0;
     this.fireTimer = 0;
     this.wormholeCd = 0;     // nedtelling etter en wormhole-teleport (hindrer re-trigge ved utgang)
+    this.acidExposure = 0;   // akkumulert tid i syre-sone (grace før skrogskade; synker ute)
     this.respawnTimer = 0;
     this.takeoverTimer = 0;
     this.shielded = false;
@@ -1776,11 +1861,14 @@ class Ship {
     // skroget når du IKKE har skjold (hp-skade → død). Synergi: når syra har spist drivstoffet
     // faller skjoldet av (fuel=0) og skroget begynner å ta skade. Spawn-grace (invuln) beskytter.
     if (zone && zone.liquid) {
+      this.acidExposure += dtScale;                       // tid i syra (TR-II: rask gjennomkjøring trygg)
       if (this.shielded) this.fuel -= PHYSICS.acidShieldDrain * dtScale;
-      else if (this.invuln <= 0) {
-        this.hp -= PHYSICS.acidHullDamage * dtScale;
+      else if (this.invuln <= 0 && this.acidExposure > PHYSICS.acidGrace) {
+        this.hp -= PHYSICS.acidHullDamage * dtScale;      // skrogskade først ETTER grace-tiden
         if (this.hp <= 0) this.die();
       }
+    } else if (this.acidExposure > 0) {
+      this.acidExposure = Math.max(0, this.acidExposure - PHYSICS.acidRecover * dtScale);   // synker ute
     }
 
     // Litt drag → terminal-fart, så et fall ikke akselererer i det uendelige.
@@ -2060,6 +2148,9 @@ class GameScene extends Phaser.Scene {
     // organisk bølge). Tegnes på nytt hver frame i update() for alle skip med refuelBeam satt.
     this.fuelBeam = this.add.graphics().setDepth(2).setBlendMode(Phaser.BlendModes.ADD);
 
+    // Spider-sense («radar»): bølge-buer ved menneske-skipet mot nærmeste trusler. Over skipene.
+    this.senseGfx = this.add.graphics().setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
+
     // Bullets
     this.bullets = [];
     this.bulletGroup = this.physics.add.group();
@@ -2116,12 +2207,23 @@ class GameScene extends Phaser.Scene {
     this.scrollMode = humanCount === 1 && !isLocallyPlayable(this.map.cols, this.map.rows);
     this.setupCamera();
 
-    // Kollisjoner. Skip-mot-skip: alle par (begge dør). Bullet-mot-skip: per skip.
+    // Kollisjoner. Skip-mot-skip: SKJOLD/invuln = STØTFANGER — er ETT skip beskyttet, spretter begge
+    // harmløst (ingen dør), så skjold ikke blir et ramme-VÅPEN (skjoldet bot kunne ellers fly på deg
+    // og overleve mens du dør). Kun når BEGGE er ubeskyttet → begge dør (klassisk). Bullet-mot-skip: per skip.
     for (let i = 0; i < this.ships.length; i++)
       for (let j = i + 1; j < this.ships.length; j++)
         this.physics.add.overlap(this.ships[i].sprite, this.ships[j].sprite, (a, b) => {
           const sa = a.getData('ship'), sb = b.getData('ship');
-          if (sa && sb) { sa.die(); sb.die(); }
+          if (!sa || !sb || !sa.alive || !sb.alive) return;
+          if (sa.shielded || sb.shielded || sa.invuln > 0 || sb.invuln > 0) {
+            // Beskyttet støt → liten gjensidig utdytt langs senterlinjen, men ingen død.
+            let dx = sb.x - sa.x, dy = sb.y - sa.y, d = Math.hypot(dx, dy) || 1;
+            const k = PHYSICS.bounceKick;
+            sa.vx -= (dx / d) * k; sa.vy -= (dy / d) * k;
+            sb.vx += (dx / d) * k; sb.vy += (dy / d) * k;
+            return;
+          }
+          sa.die(); sb.die();
         });
     for (const ship of this.ships) {
       this.physics.add.overlap(this.bulletGroup, ship.sprite, (a, b) => this.onBulletHit(a, b));
@@ -2160,8 +2262,9 @@ class GameScene extends Phaser.Scene {
       fit();
       this.scale.on('resize', fit);
     }
-    // Radar (minimap) — opprettes ALLTID, både fit- og scroll-modus (XPilot-radar). Synlighet
-    // styres live av RADAR-toggelen; skjermfestet (setScrollFactor 0), så den funker i begge modus.
+    // Radar = BÅDE hjørne-minimap (kart-oversikt) OG spider-sense ved skipet (se drawSpiderSense).
+    // Minimapet forankres i verdens-rom + motskaleres med 1/zoom (anchor), så det funker i begge
+    // modi. Begge styres av RADAR-toggelen.
     this.minimap = new Minimap(this, this.map);
     this.minimap.setVisible(RADAR);
     this.scale.on('resize', () => this.minimap && this.minimap.reposition());
@@ -2175,6 +2278,68 @@ class GameScene extends Phaser.Scene {
       if (t) this.cameras.main.centerOn(t.x, t.y);
     }
     if (this.minimap && RADAR) this.minimap.update();
+  }
+
+  // Spider-sense («radar»): WiFi-bølge-buer ved SKJERMKANTEN, KUN mot trusler UTENFOR synsfeltet
+  // (de du allerede ser er det ingen vits å varsle om). Buene klamrer til kant-rammen i retningen
+  // trusselen ligger, og peker mot den. Fiende-skip i fiendens farge; innkommende kuler i dus gul.
+  // Kamera-relativt → i fit-modus (alt synlig) vises ingenting; minimapet dekker oversikten der.
+  drawSpiderSense() {
+    const g = this.senseGfx;
+    if (!g) return;
+    g.clear();
+    if (!RADAR) return;
+    const cam = this.cameras.main, z = cam.zoom || 1, inv = 1 / z;
+    const map = this.map, bs = map.blockSize, W = map.widthPx, H = map.heightPx;
+    const t = this.time.now;
+    // Synsfelt fra scrollX/Y + zoom (settes umiddelbart av centerOn; worldView lagger én frame).
+    const vw = cam.width / z, vh = cam.height / z;
+    const cx = cam.scrollX + vw / 2, cy = cam.scrollY + vh / 2, halfW = vw / 2, halfH = vh / 2;
+    const marginPx = SENSE.baseR + 2 * SENSE.gap + 8;          // hold hele bue-viften innenfor kanten
+    const innerW = Math.max(8, halfW - marginPx * inv), innerH = Math.max(8, halfH - marginPx * inv);
+
+    // floor > 0 → ingen hard rekkevidde-grense (alltid på når off-screen); intensiteten daler med
+    // avstand men bunner på `floor` så fjerne fiender fortsatt vises. floor = 0 → hard grense (kuler).
+    const edgeArc = (tx, ty, color, mult, falloffBlocks, floor) => {
+      let dx = tx - cx, dy = ty - cy;
+      if (map.edgewrap) {                                       // nærmeste bilde med wrap
+        if (Math.abs(dx) > W / 2) dx -= Math.sign(dx) * W;
+        if (Math.abs(dy) > H / 2) dy -= Math.sign(dy) * H;
+      }
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) return;
+      if (!floor && dist > bs * falloffBlocks) return;          // kuler: utenfor rekkevidde → dropp
+      if (Math.abs(dx) <= halfW && Math.abs(dy) <= halfH) return;   // INNE i synsfeltet → ser den alt
+      const bearing = Math.atan2(dy, dx);
+      const ux = Math.cos(bearing), uy = Math.sin(bearing);
+      const s = Math.min(Math.abs(ux) > 1e-6 ? innerW / Math.abs(ux) : Infinity,
+                         Math.abs(uy) > 1e-6 ? innerH / Math.abs(uy) : Infinity);
+      const ex = cx + ux * s, ey = cy + uy * s;                 // ankerpunkt på kant-rammen (world)
+      const p = Math.max(floor || 0, 1 - dist / (bs * falloffBlocks));   // skip: bunner på floor
+      for (let i = 0; i < 3; i++) {
+        const wave = 0.6 + 0.4 * Math.sin(t * 0.012 - i * 0.9);
+        const a = Math.min(1, (0.45 + 0.5 * p) * mult * wave * (1 - i * 0.16));
+        g.lineStyle(2.5, color, a);
+        g.beginPath();
+        g.arc(ex, ey, (SENSE.baseR + i * SENSE.gap) * inv, bearing - SENSE.spread, bearing + SENSE.spread);
+        g.strokePath();
+      }
+    };
+
+    // Fiende-skip utenfor synsfeltet (ikke egne menneske-skip). ALLTID på når off-screen (floor):
+    // ingen avstands-grense — du vil vite retningen uansett. Intensiteten daler men forsvinner ikke.
+    for (const o of this.ships) {
+      if (!o.alive || o.eliminated || this.humanShips.includes(o)) continue;
+      edgeArc(o.x, o.y, o.color || 0xff4455, 1, SENSE.shipRange, SENSE.shipFloor);
+    }
+    // Innkommende kuler utenfor synsfeltet, kun de på vei innover mot synsfeltet (gul, dusere).
+    // Hard rekkevidde (floor=0) — en kule tvers over kartet er ikke en reell trussel.
+    for (const b of this.bullets) {
+      if (b.dead || !b.sprite || this.humanShips.includes(b.owner)) continue;
+      const bv = b.sprite.body.velocity;
+      if (bv.x * (cx - b.sprite.x) + bv.y * (cy - b.sprite.y) <= 0) continue;   // ikke på vei mot oss
+      edgeArc(b.sprite.x, b.sprite.y, SENSE.bulletColor, SENSE.bulletDim, SENSE.bulletRange, 0);
+    }
   }
 
   onEliminated(ship) {
@@ -2338,6 +2503,8 @@ class GameScene extends Phaser.Scene {
       if (b.dead) this.bullets.splice(i, 1);
     }
 
+    this.drawSpiderSense();        // radar: bølge-buer ved menneske-skipet mot nærmeste trusler
+
     // Overlevelses-vindu (TurboRaketti II): siste skip vinner først om det lever vinduet ut.
     // Dør det av en kule i lufta i mellomtiden → uavgjort.
     if (this.winTimer > 0) {
@@ -2397,11 +2564,13 @@ async function boot() {
   }
 
   loadTuning();                   // anvend lagrede tuning-verdier FØR Phaser starter
+  applyBotLevel(BOT_LEVEL);       // sett AI-knottene fra valgt bot-nivå
   setupGravityControl();          // bruker MAP.gravity som default hvis ingen lagret verdi
   setupMapSelector(sel);
   setupAIToggle();
   setupNewbieToggle();
   setupRadarToggle();
+  setupBotLevelControl();
   setupLookControl();
   setupModeControl();
   buildTuningPanel();
@@ -2428,6 +2597,21 @@ let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) === 'on'; } 
 // Radar (minimap) — default PÅ; lagres 'off' når slått av. Leses live av minimap-laget.
 const RADAR_KEY = 'ypilot.radar';
 let RADAR = (() => { try { return localStorage.getItem(RADAR_KEY) !== 'off'; } catch (e) { return true; } })();
+
+// Bot-vanskelighetsgrad. Presets skriver inn i AI-knottene (aimError/fireChance/reactMult). Klar
+// for framtidig utvidelse (flere knotter pr. nivå). «Nordlending» = nådeløs (dagens hardeste).
+const BOT_LEVELS = {
+  enkel:       { aimError: 0.34, fireChance: 0.30, reactMult: 2.3 },   // bommer mye, skyter lite, treg
+  vanskelig:   { aimError: 0.12, fireChance: 0.65, reactMult: 1.2 },   // kompetent, men slåbar
+  nordlending: { aimError: 0.0,  fireChance: 1.0,  reactMult: 0.6 },   // frame-skarp, perfekt sikte
+};
+const BOT_LEVEL_KEY = 'ypilot.botLevel';
+let BOT_LEVEL = (() => { try { return localStorage.getItem(BOT_LEVEL_KEY) || 'vanskelig'; } catch (e) { return 'vanskelig'; } })();
+function applyBotLevel(level) {
+  const p = BOT_LEVELS[level] || BOT_LEVELS.vanskelig;
+  AI.aimError = p.aimError; AI.fireChance = p.fireChance; AI.reactMult = p.reactMult;
+  BOT_LEVEL = BOT_LEVELS[level] ? level : 'vanskelig';
+}
 
 // Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
 const LOOK_KEY = 'ypilot.look';
@@ -2519,6 +2703,8 @@ const TUNING = [
   { g: 'Soner',     key: 'zoneForce',     label: 'Sone-kraft',    min: 0,    max: 8,    step: 0.5,   get: () => PHYSICS.zoneForce,     set: v => PHYSICS.zoneForce = +v },
   { g: 'Soner',     key: 'acidShield',    label: 'Syre-skjold',   min: 0,    max: 6,    step: 0.5,   get: () => PHYSICS.acidShieldDrain, set: v => PHYSICS.acidShieldDrain = +v },
   { g: 'Soner',     key: 'acidHull',      label: 'Syre-skrog',    min: 0,    max: 0.3,  step: 0.01,  get: () => PHYSICS.acidHullDamage, set: v => PHYSICS.acidHullDamage = +v },
+  { g: 'Soner',     key: 'acidGrace',     label: 'Syre-grace',    min: 0,    max: 240,  step: 15,    get: () => PHYSICS.acidGrace,    set: v => PHYSICS.acidGrace = +v },
+  { g: 'Soner',     key: 'acidRecover',   label: 'Syre-restitusjon',min: 0.5,max: 6,    step: 0.5,   get: () => PHYSICS.acidRecover,  set: v => PHYSICS.acidRecover = +v },
 ];
 
 // ── Fysikk-modus (XPilot / TR-II) ──────────────────────────────────────────
@@ -2742,7 +2928,20 @@ function setupRadarToggle() {
   cb.addEventListener('change', () => {
     RADAR = cb.checked;
     try { localStorage.setItem(RADAR_KEY, RADAR ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+    // Begge radar-lag styres av RADAR: minimap skjules/vises her; spider-sense gates i drawSpiderSense().
     if (GAME_SCENE && GAME_SCENE.minimap) GAME_SCENE.minimap.setVisible(RADAR);
+  });
+}
+
+// Bot-vanskelighetsgrad-velger (Enkel/Vanskelig/Nordlending). LIVE — applyBotLevel skriver inn
+// i AI-knottene som leses hver frame (ingen reload). (Framtidig GUI-utvidelse: flere nivåer.)
+function setupBotLevelControl() {
+  const sel = document.getElementById('botlevel-select');
+  if (!sel) return;
+  sel.value = BOT_LEVEL;
+  sel.addEventListener('change', () => {
+    applyBotLevel(sel.value);
+    try { localStorage.setItem(BOT_LEVEL_KEY, BOT_LEVEL); } catch (e) { /* privat modus */ }
   });
 }
 

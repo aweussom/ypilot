@@ -145,6 +145,9 @@ def main():
     out = {
         'name': name, 'source': 'TurboRaketti II', 'cols': cols, 'rows': rows,
         'cellPx': cell, 'tiles': grid, 'spawns': spawns, 'fuelStations': fuel,
+        # TR-II-arenaer er LUKKEDE (solid kant, ingen toroidal wrap) — uten dette defaulter
+        # buildMapFromJson til edgewrap=true, som gir radar/AI/blast feil «korteste vei rundt kanten».
+        'edgewrap': False,
         'gravityZones': grav_zones, 'liquidZones': liquid_zones,
     }
     json.dump(out, open(out_path, 'w'), separators=(',', ':'))
