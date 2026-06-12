@@ -901,28 +901,25 @@ function renderMap(scene, map) {
   // Gravitasjon = fiolett fyll + retnings-piler (langs fx,fy). Syre = giftig-grønt fyll med
   // lysere topp-kant (væske-overflate). Hjelper spilleren se hvor fysikken endrer seg.
   let zoneGfx = null;
+  const liquidSurfaces = [];     // {x0,x1,y,color} per åpen kjøring i væske-toppen (animert slosh)
   const gravZ = map.gravityZones || [], liqZ = map.liquidZones || [];
   if (gravZ.length || liqZ.length) {
     zoneGfx = scene.add.graphics().setDepth(0.5).setBlendMode(Phaser.BlendModes.ADD);
-    const drawZone = (z, fill, edge) => {
-      const x = z.col * bs, y = z.row * bs, w = z.cols * bs, h = z.rows * bs;
-      // Trekant-mesh-fyll (samme stil som de solide sonene, se fillTrad): per celle delt indre
-      // topp-/venstre-kant + anti-diagonal → to trekanter. Fyller sonen «pent» i stedet for en
-      // flat firkant. Dim ADD i sonens farge; lysere ramme rundt.
-      zoneGfx.lineStyle(1, fill, 0.25);
-      for (let rr = 0; rr < z.rows; rr++)
+    const drawZone = (z, fill, edge, isLiquid) => {
+      // Fyll KUN ÅPNE celler i sonen → bassenget følger kart-hulrommet (kantene «passer» mot
+      // veggene) i stedet for en firkant lagt OVER terrenget. Dim ADD i sonens farge.
+      zoneGfx.fillStyle(fill, 0.16);
+      for (let rr = 0; rr < z.rows; rr++) {
+        const r = z.row + rr; if (r < 0 || r >= map.rows) continue;
         for (let cc = 0; cc < z.cols; cc++) {
-          const cx0 = x + cc * bs, cy0 = y + rr * bs;
-          if (rr > 0) zoneGfx.lineBetween(cx0, cy0, cx0 + bs, cy0);   // indre topp-kant
-          if (cc > 0) zoneGfx.lineBetween(cx0, cy0, cx0, cy0 + bs);   // indre venstre-kant
-          zoneGfx.lineBetween(cx0, cy0 + bs, cx0 + bs, cy0);          // anti-diagonal
+          const c = z.col + cc; if (c < 0 || c >= map.cols) continue;
+          if (map.tiles[r][c] !== 'x') zoneGfx.fillRect(c * bs, r * bs, bs, bs);
         }
-      zoneGfx.lineStyle(2, edge, 0.6);
-      zoneGfx.strokeRect(x, y, w, h);
+      }
       // Kraft-retning: en pil fra senter langs (fx,fy).
       const mag = Math.hypot(z.fx || 0, z.fy || 0);
       if (mag > 1e-6) {
-        const cx = x + w / 2, cy = y + h / 2, len = Math.min(w, h) * 0.3;
+        const cx = (z.col + z.cols / 2) * bs, cy = (z.row + z.rows / 2) * bs, len = Math.min(z.cols, z.rows) * bs * 0.3;
         const ux = (z.fx || 0) / mag, uy = (z.fy || 0) / mag;
         const ex = cx + ux * len, ey = cy + uy * len;
         zoneGfx.lineStyle(2, edge, 0.8);
@@ -931,11 +928,23 @@ function renderMap(scene, map) {
         zoneGfx.lineBetween(ex, ey, ex - Math.cos(a - 0.4) * 7, ey - Math.sin(a - 0.4) * 7);
         zoneGfx.lineBetween(ex, ey, ex - Math.cos(a + 0.4) * 7, ey - Math.sin(a + 0.4) * 7);
       }
+      // Væske: samle overflate-segmenter (åpne kjøringer i toppraden) for animert skvulping.
+      if (isLiquid) {
+        const topR = z.row; if (topR < 0 || topR >= map.rows) return;
+        let runStart = -1;
+        for (let cc = 0; cc <= z.cols; cc++) {
+          const c = z.col + cc;
+          const open = cc < z.cols && c >= 0 && c < map.cols && map.tiles[topR][c] !== 'x';
+          if (open && runStart < 0) runStart = c;
+          else if (!open && runStart >= 0) { liquidSurfaces.push({ x0: runStart * bs, x1: c * bs, y: topR * bs, color: edge }); runStart = -1; }
+        }
+      }
     };
-    for (const z of gravZ) drawZone(z, 0x8844ff, 0xaa66ff);   // fiolett gravitasjons-felt
-    for (const z of liqZ)  drawZone(z, 0x33ff66, 0x66ff99);   // giftig-grønn syre/væske
+    for (const z of gravZ) drawZone(z, 0x8844ff, 0xaa66ff, false);   // fiolett gravitasjons-felt
+    for (const z of liqZ)  drawZone(z, 0x33ff66, 0x66ff99, true);    // giftig-grønn syre/væske
   }
   scene.zoneGfx = zoneGfx;
+  scene.liquidSurfaces = liquidSurfaces;
 
   // Wormholes (XPilot): neon-ringer. Inngang cyan, utgang magenta, 'both' hvit. Pulsen animeres
   // i GameScene.update via alpha. Statisk geometri tegnes én gang her.
@@ -1349,6 +1358,13 @@ class Bullet {
     // Bullet stoppes av vegg.
     if (this.life <= 0 || tileAt(this.scene.map, this.sprite.x, this.sprite.y) === 'x') {
       this.destroy();
+      return;
+    }
+    // Kule treffer syre-overflaten → liten sprut, og syra sluker kula (acid-bassenget gir dekning).
+    const lz = zoneAt(this.scene.map, this.sprite.x, this.sprite.y);
+    if (lz && lz.liquid) {
+      this.scene.acidSplashAt(this.sprite.x, this.sprite.y, 5);
+      this.destroy();
     }
   }
 
@@ -1734,6 +1750,7 @@ class Ship {
     this.fireTimer = 0;
     this.wormholeCd = 0;     // nedtelling etter en wormhole-teleport (hindrer re-trigge ved utgang)
     this.acidExposure = 0;   // akkumulert tid i syre-sone (grace før skrogskade; synker ute)
+    this.wasInAcid = false;  // var i syre forrige frame (for inn/ut-sprut)
     this.respawnTimer = 0;
     this.takeoverTimer = 0;
     this.shielded = false;
@@ -1902,13 +1919,24 @@ class Ship {
     // faller skjoldet av (fuel=0) og skroget begynner å ta skade. Spawn-grace (invuln) beskytter.
     if (zone && zone.liquid) {
       this.acidExposure += dtScale;                       // tid i syra (TR-II: rask gjennomkjøring trygg)
+      if (!this.wasInAcid) {                              // INN i syra → sprut (skalert med farten)
+        const sp = Math.hypot(this.vx, this.vy);
+        this.scene.acidSplashAt(this.x, this.y, Math.min(26, 6 + Math.round(sp * 3)));
+        this.wasInAcid = true;
+      }
       if (this.shielded) this.fuel -= PHYSICS.acidShieldDrain * dtScale;
       else if (this.invuln <= 0 && this.acidExposure > PHYSICS.acidGrace) {
         this.hp -= PHYSICS.acidHullDamage * dtScale;      // skrogskade først ETTER grace-tiden
         if (this.hp <= 0) this.die();
       }
-    } else if (this.acidExposure > 0) {
-      this.acidExposure = Math.max(0, this.acidExposure - PHYSICS.acidRecover * dtScale);   // synker ute
+    } else {
+      if (this.wasInAcid) {                               // UT av syra → mindre sprut
+        const sp = Math.hypot(this.vx, this.vy);
+        this.scene.acidSplashAt(this.x, this.y, Math.min(18, 4 + Math.round(sp * 2)));
+        this.wasInAcid = false;
+      }
+      if (this.acidExposure > 0)
+        this.acidExposure = Math.max(0, this.acidExposure - PHYSICS.acidRecover * dtScale);   // synker ute
     }
 
     // Litt drag → terminal-fart, så et fall ikke akselererer i det uendelige.
@@ -2116,6 +2144,9 @@ class Ship {
     this.sprite.setVisible(false);
     this.sprite.body.enable = false;
     this.scene.explosion.explode(PHYSICS.explodeCount, this.x, this.y);
+    // Eksploderer skipet i syra → kraftig syre-sprut i tillegg til ild-eksplosjonen.
+    const dz = zoneAt(this.scene.map, this.x, this.y);
+    if (dz && dz.liquid) this.scene.acidSplashAt(this.x, this.y, 24);
 
     // Blast-push: eksplosjonen dytter nærliggende levende skip radielt vekk (avtar med
     // avstand) — ofte rett inn i en vegg, der vegg-mekanikken tar fuel/skjold/liv. DOBBELT
@@ -2195,6 +2226,21 @@ class GameScene extends Phaser.Scene {
 
     // Spider-sense («radar»): bølge-buer ved menneske-skipet mot nærmeste trusler. Over skipene.
     this.senseGfx = this.add.graphics().setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
+
+    // Syre-sprut: grønne dråper som spruter når noe treffer/forlater væske-overflaten (skip inn/ut,
+    // kuler, eksplosjoner). Radial burst via .explode(n,x,y). Skvulpende overflate tegnes i update().
+    this.acidSplash = this.add.particles(0, 0, 'spark', {
+      lifespan: { min: 250, max: 600 },
+      speed: { min: 40, max: 200 },
+      scale: { start: 0.7, end: 0 },
+      alpha: { start: 0.9, end: 0 },
+      gravityY: 220,                                  // dråpene faller tilbake (ekte væske-følelse)
+      color: [0xeaffee, 0x66ff99, 0x33ff66, 0x119944],
+      blendMode: 'ADD',
+      emitting: false,
+    });
+    this.acidSplash.setDepth(6);
+    this.liquidGfx = this.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);   // skvulp-overflate
 
     // Bullets
     this.bullets = [];
@@ -2329,6 +2375,28 @@ class GameScene extends Phaser.Scene {
   // (de du allerede ser er det ingen vits å varsle om). Buene klamrer til kant-rammen i retningen
   // trusselen ligger, og peker mot den. Fiende-skip i fiendens farge; innkommende kuler i dus gul.
   // Kamera-relativt → i fit-modus (alt synlig) vises ingenting; minimapet dekker oversikten der.
+  // Sprut grønne syre-dråper ved (x,y) — kalles ved skip inn/ut av væske, kule-treff, eksplosjon.
+  acidSplashAt(x, y, n) { if (this.acidSplash) this.acidSplash.explode(n, x, y); }
+
+  // Skvulpende væske-overflate: animert bølge-linje langs hvert overflate-segment (slosh).
+  drawLiquidSurface(time) {
+    const g = this.liquidGfx; if (!g) return;
+    g.clear();
+    const segs = this.liquidSurfaces; if (!segs || !segs.length) return;
+    const t = time * 0.001;
+    for (const s of segs) {
+      const span = s.x1 - s.x0, steps = Math.max(2, Math.round(span / 12));
+      g.lineStyle(2, s.color, 0.85);
+      g.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const u = i / steps, x = s.x0 + span * u;
+        const yy = s.y + Math.sin(u * span * 0.04 + t * 2.5) * 2.4 + Math.sin(u * 9 - t * 1.7) * 1.1;
+        if (i === 0) g.moveTo(x, yy); else g.lineTo(x, yy);
+      }
+      g.strokePath();
+    }
+  }
+
   drawSpiderSense() {
     const g = this.senseGfx;
     if (!g) return;
@@ -2549,6 +2617,7 @@ class GameScene extends Phaser.Scene {
     }
 
     this.drawSpiderSense();        // radar: bølge-buer ved menneske-skipet mot nærmeste trusler
+    this.drawLiquidSurface(time);  // skvulpende syre-overflate
 
     // Overlevelses-vindu (TurboRaketti II): siste skip vinner først om det lever vinduet ut.
     // Dør det av en kule i lufta i mellomtiden → uavgjort.
