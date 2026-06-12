@@ -57,14 +57,14 @@ const PHYSICS = {
   exhaustOffset: 12,    // px bak senteret
   // — Drivstoff —
   fuelMax:      100,    // full tank
-  fuelThrust:   0.18,   // drivstoff/frame ved gass (skaleres NED på store kart, se fuelMapRef)
+  fuelThrust:   0.09,   // drivstoff/frame ved gass (halvert for ~2× utholdenhet; skaleres NED på store kart)
   fuelMapRef:   48,     // tiles — kart ≤ denne dim. bruker full fuelThrust; større kart skalerer
                         //   drivstoff-bruk fra rakett lineært ned (mer å fly over → billigere gass)
   fuelMapMin:   0.20,   // gulv for skaleringen (svært store kart: ned mot 20 % bruk per thrust)
-  fuelShot:     1.25,   // drivstoff per skudd (senket i takt med raskere skuddtakt → ~samme fuel/sek ved sustained ild)
+  fuelShot:     0.6,    // drivstoff per skudd (halvert → fuel rekker lenger)
   fuelRefill:   0.8,    // drivstoff/frame ved fylling nær stasjon
   // — Skjold —
-  shieldDrain:  0.5,    // drivstoff/frame med skjold oppe
+  shieldDrain:  0.25,   // drivstoff/frame med skjold oppe (halvert → fuel rekker lenger)
   shieldBounce: 0.7,    // fart beholdt ved skjold-sprett mot vegg
   bounceKick:   1.1,    // ekstra utdytt-faktor ved sprett ut av fast underlag (skjold/invuln); var 1.5 [tunbar]
   wallLethalSpeed: 5.5, // px/frame — vegg-treff RASKERE enn dette dreper tross skjold (kun grunne/
@@ -404,11 +404,27 @@ function buildMapFromJson(j) {
     .map(s => ({ x: (s.col + 0.5) * bs, y: (s.row + 0.5) * bs, angle: -Math.PI / 2 }));
   const fuelStations = (j.fuelStations || []).map(f => ({ x: (f.col + 0.5) * bs, y: (f.row + 0.5) * bs }));
   const wormholes = (j.wormholes || []).map(w => ({ x: (w.col + 0.5) * bs, y: (w.row + 0.5) * bs, type: w.type }));
-  // Pads (TR-II): celle-geometri + px for markører/landing-sjekk. row = pad-ens TOPP solide rad.
-  const pads = (j.pads || []).map(p => ({
+  // Pads: TR-II har eksplisitte `pads`. XPilot-kart har ingen → UTLED pads fra spawns som står
+  // på FLAT GRUNN (solid rett under). Disse blir lovlige landingsflater (closedLanding) + markører.
+  // row = pad-ens TOPP solide rad. type='home' med spillerfarge.
+  let pads = (j.pads || []).map(p => ({
     col: p.col, row: p.row, cols: p.cols, type: p.type, player: p.player,
     x: p.col * bs, y: p.row * bs, w: p.cols * bs,
   }));
+  if (!pads.length) {
+    for (const s of (j.spawns || [])) {
+      let gr = -1;
+      for (let r = s.row; r <= s.row + 3 && r < j.rows; r++)
+        if (r > 0 && tiles[r] && tiles[r][s.col] === 'x' && tiles[r - 1][s.col] !== 'x') { gr = r; break; }
+      if (gr < 0) continue;                                  // ingen flat grunn under → ikke en base
+      let c0 = s.col, c1 = s.col;
+      const flat = c => tiles[gr][c] === 'x' && tiles[gr - 1][c] !== 'x';
+      while (c0 > 0 && s.col - c0 < 4 && flat(c0 - 1)) c0--;
+      while (c1 < j.cols - 1 && c1 - s.col < 4 && flat(c1 + 1)) c1++;
+      pads.push({ col: c0, row: gr, cols: c1 - c0 + 1, type: 'home', player: s.player,
+                  x: c0 * bs, y: gr * bs, w: (c1 - c0 + 1) * bs });
+    }
+  }
   if (spawns.length === 0) {            // fallback: kvart-punkter
     for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.75], [0.75, 0.25], [0.25, 0.75]])
       spawns.push({ x: fx * j.cols * bs, y: fy * j.rows * bs, angle: -Math.PI / 2 });
@@ -419,7 +435,9 @@ function buildMapFromJson(j) {
     tiles, edgewrap: j.edgewrap !== false, gravity: j.gravity || 0, cog: null,
     fuelStations, spawns, name: j.name || 'kart', header: {},
     gravityZones: j.gravityZones || [], liquidZones: j.liquidZones || [], wormholes,
-    pads, closedLanding: !!j.closedLanding, source: j.source,
+    // closedLanding (landing kun på pads, ellers Kaboom) gjelder nå ALLE lastede kart (anti soft-lock:
+    // tom for fuel + landet = du dør og respawner med full tank, i stedet for å bli stående fast).
+    pads, closedLanding: j.closedLanding !== false, source: j.source,
   };
 }
 
@@ -2038,12 +2056,12 @@ class Ship {
       if (this.invuln > 0) { this.invuln = 0; this.sprite.setAlpha(1); }
     }
 
-    // Fylling — KUN ved å hovre sakte nær en fuel-pod (#). Pods ligger ved hver base + er sprinklet
-    // over kartet, så man tanker uten å lande (nødvendig når landing er begrenset til pads). Tidligere
-    // «hvil på hvilken som helst flate = fyll» er fjernet → ekte drivstoff-press.
+    // Fylling — ved å hovre sakte nær en fuel-pod (#, sprinklet rundt kartet), ELLER ved å lande på
+    // en base/pad (`this.grounded` — med closedLanding skjer grounded KUN på pads, så det er ekte
+    // base-fylling, ikke «fyll på hvilken som helst flate»). Anti soft-lock: tom + landet på base → fyll.
     this.refuelBeam = null;        // settes til {x,y} på stasjonen vi fyller fra (for fuel-strålen)
     if (this.fuel < PHYSICS.fuelMax) {
-      let refueling = false;
+      let refueling = this.grounded;
       // Nærmeste stasjon i rekkevidde (kun ved lav fart) → fyll + tegn stråle fra den.
       if (Math.hypot(this.vx, this.vy) < REFUEL_SPEED && this.scene.map.fuelStations) {
         let nd = Infinity;
@@ -2685,7 +2703,7 @@ const MAP_KEY = 'ypilot.map';
 
 async function boot() {
   let sel = 'test';
-  try { sel = localStorage.getItem(MAP_KEY) || 'test'; } catch (e) { /* privat modus */ }
+  try { sel = localStorage.getItem(MAP_KEY) || 'tropulus4p'; } catch (e) { sel = 'tropulus4p'; }   // default-brett
   const aiOn = readAIOn();
   MAP = await loadMap(sel);
   // Lagret kart ekskludert (kjent ødelagt), eller for stort for valgt modus? → testbane.
@@ -2726,7 +2744,7 @@ function readAIOn() {
 // Newbie-modus (auto-shield): live-toggle, persistert. Når PÅ skjolder menneske-skip
 // automatisk rett før vegg-treff, og et skjoldet treff spretter alltid (ingen dødelig-fart).
 const NEWBIE_KEY = 'ypilot.newbie';
-let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) === 'on'; } catch (e) { return false; } })();
+let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) !== 'off'; } catch (e) { return true; } })();   // default PÅ
 
 // Radar (minimap) — default PÅ; lagres 'off' når slått av. Leses live av minimap-laget.
 const RADAR_KEY = 'ypilot.radar';
@@ -2740,7 +2758,7 @@ const BOT_LEVELS = {
   nordlending: { aimError: 0.0,  fireChance: 1.0,  reactMult: 0.6 },   // frame-skarp, perfekt sikte
 };
 const BOT_LEVEL_KEY = 'ypilot.botLevel';
-let BOT_LEVEL = (() => { try { return localStorage.getItem(BOT_LEVEL_KEY) || 'vanskelig'; } catch (e) { return 'vanskelig'; } })();
+let BOT_LEVEL = (() => { try { return localStorage.getItem(BOT_LEVEL_KEY) || 'enkel'; } catch (e) { return 'enkel'; } })();   // default Enkel
 function applyBotLevel(level) {
   const p = BOT_LEVELS[level] || BOT_LEVELS.vanskelig;
   AI.aimError = p.aimError; AI.fireChance = p.fireChance; AI.reactMult = p.reactMult;
@@ -2750,7 +2768,7 @@ function applyBotLevel(level) {
 // Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
 const LOOK_KEY = 'ypilot.look';
 function readLook() {
-  try { return localStorage.getItem(LOOK_KEY) || 'new'; } catch (e) { return 'new'; }
+  try { return localStorage.getItem(LOOK_KEY) || 'trad'; } catch (e) { return 'trad'; }   // default Trad-look
 }
 
 // Fysikk-modus: 'xpilot' (klassisk) eller 'trii' (TurboRaketti II — tettere skuddtakt, stream-dytt).
