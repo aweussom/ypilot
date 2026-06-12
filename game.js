@@ -961,17 +961,37 @@ function renderMap(scene, map) {
   }
   scene.wormGfx = wormGfx;
 
-  // Pads (TR-II): TYKK neon-strek på pad-overflaten. Hjem = spillerens farge (din base vs fiendens),
-  // fuel = grønn, butikk/garasje = oransje. Markerer hvor det er trygt å lande (closedLanding).
-  if (map.pads && map.pads.length) {
+  // Lande-/base-markører: TYKK neon-strek på flata. Hjem = spillerfarge, fuel = grønn,
+  // butikk/garasje = oransje. TR-II har eksplisitte `pads`; XPilot-kart har ingen, så der
+  // UTLEDER vi markører fra spawns som står på FLAT GRUNN (solid rett under) → samme tydelige
+  // «her er basen»-strek. (XPilot lar deg lande overalt; markøren er kun en hjelp.)
+  {
     const homePal = [COLORS.p1, COLORS.p2, 0xffcc33, 0x66ff66, 0xff6688, 0xaa88ff];
     const padGfx = scene.add.graphics().setDepth(1).setBlendMode(Phaser.BlendModes.ADD);
-    for (const p of map.pads) {
-      const col = p.type === 'home' ? homePal[(p.player || 0) % homePal.length]
-                : p.type === 'fuel' ? FUEL_COLOR : 0xff9933;   // øvrige (butikk/garasje) = oransje
-      const x0 = p.x, x1 = p.x + p.w, y = p.y;                 // pad-overflatens topp-kant
+    const padLine = (x0, x1, y, col) => {
       padGfx.lineStyle(5, col, 0.5); padGfx.lineBetween(x0, y, x1, y);   // bred glød
       padGfx.lineStyle(2, col, 1);   padGfx.lineBetween(x0, y, x1, y);   // lys kjerne
+    };
+    if (map.pads && map.pads.length) {
+      for (const p of map.pads) {
+        const col = p.type === 'home' ? homePal[(p.player || 0) % homePal.length]
+                  : p.type === 'fuel' ? FUEL_COLOR : 0xff9933;   // øvrige (butikk/garasje) = oransje
+        padLine(p.x, p.x + p.w, p.y, col);
+      }
+    } else if (map.spawns) {
+      // XPilot: marker hver spawn som har flat solid grunn rett under (innen ~3 celler).
+      map.spawns.forEach((sp, i) => {
+        const sc = Math.floor(sp.x / bs), sr = Math.floor(sp.y / bs);
+        let gr = -1;
+        for (let r = sr; r <= sr + 3 && r < map.rows; r++)
+          if (r > 0 && map.tiles[r] && map.tiles[r][sc] === 'x' && map.tiles[r - 1][sc] !== 'x') { gr = r; break; }
+        if (gr < 0) return;                                   // ingen flat grunn under → ikke en base
+        let c0 = sc, c1 = sc;                                 // utvid langs den flate grunnen (±4 celler)
+        const flat = c => map.tiles[gr][c] === 'x' && map.tiles[gr - 1][c] !== 'x';
+        while (c0 > 0 && sc - c0 < 4 && flat(c0 - 1)) c0--;
+        while (c1 < map.cols - 1 && c1 - sc < 4 && flat(c1 + 1)) c1++;
+        padLine(c0 * bs, (c1 + 1) * bs, gr * bs, homePal[i % homePal.length]);
+      });
     }
     scene.padGfx = padGfx;
   }

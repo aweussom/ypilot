@@ -429,7 +429,14 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
 6. Score-display ✅
 7. Justerbar gravitasjon (slider 0–0.10, persistert i localStorage) ✅
 
-## Fase 2 — XPilot-komplett
+## Fase 2 — XPilot-komplett ✅ (i praksis ferdig)
+
+> **Status (2026-06-12):** alt det vesentlige er gjort — se CLAUDE.md for detaljene.
+> ✅ `.map`/`.game`-lasting (JSON + embedded), AI-bots med BFS-pathfinding + vanskelighetsgrad
+> (Enkel/Vanskelig/Nordlending) + anti-selvmord, skjold (m/støtfanger-regel), fuel-pods, justerbar
+> gravitasjon + TR-II force-soner (revers-gravitasjon + syre), landing (TR-II: kun pads),
+> **radar** (hjørne-minimap + spider-sense kant-buer), wormholes, lande-/base-markører.
+> ⏳ Gjenstår: **Web Audio-lyd** (utsatt til Fase 3-arbeid), evt. nettverks-MP, levende vegger.
 
 - `.map`-parser og kartlasting (tile-grid, se Kart-format)
 - **Start-punkter:** gjenbruk basene i kartene (`_` + lag-baser `0`–`9`) som
@@ -468,9 +475,14 @@ XPilot-klone i Phaser 3. Lokal multiplayer, XPilot map-format.
   rakett-motor, eksplosjon).
 - (Senere) Sky-lagring av innstillinger/highscores via Google (tabtabtab-kode).
 
-## Fase 3 — Turboraketti-lag
+## Fase 3 — Turboraketti-lag (startet)
 
-- Kartene fra Turboraketti gjenskapt i `.map`-format.
+> **Status (2026-06-12):** ✅ fem TR-II 4-spiller-arenaer konvertert fra RetroRocket-kildene
+> (ekolos4p, likvidius4p, metarola4p, sitimus4p, tropulus4p; via `retrorocket/convert_to_json.py`)
+> med pads/spawns/fuel-pods/force-soner. ⏳ Gjenstår: rakettstråle-som-våpen + push-off/fraspark
+> (se `TODO.md`), TR-II-spesifikk balansering, lyd.
+
+- Kartene fra Turboraketti gjenskapt (✅ via RetroRocket-binær → JSON, ikke `.map`-tekst).
 - **Rakettstrålen som våpen:** eksosen gjør skade + dytter motstanderen (mer dytt
   mot skjold = større flate), torque fra off-center treff → uventet spinn → krasj.
   Klassisk Turboraketti-taktikk.

@@ -44,16 +44,14 @@ bunnlinja (`RADAR`, persistert `ypilot.radar`, default på). Soner + fuel + skip
 
 ## Andre parkerte ting
 
-- **Drivstoff-knapphet på TR-II-konverterte brett (framtidig).** Klassiske XPilot-brett har X
-  spawn-punkter + Y fuel-depots (`#`). De TR-II-konverterte brettene har INGEN fuel-depots, og
-  motoren lar deg lande + fuele sakte på ALLE flate topper → for lett (ingen drivstoff-press).
-  Fiks: (a) «tegn»/plasser fuel-depots på TR-II-brett ved konvertering (retrorocket), og (b)
-  ikke tillat landing/fylling «overalt» — begrens til depots/baser (evt. en per-kart-flagg om
-  flate-landing er lov). Jf. memory [[drivstoff-og-liv]] (dagens «fuel ved hovring + landing»).
-  - **Marker lovlige landingsflater med farge** (Tommys forslag): ORANSJE neon = nøytrale
-    fuel-depots/landingsflater (varm farge skiller seg tydelig fra cyan/blå vegger). SKIP-/
-    LAG-FARGE neon = egne baser (jf. XPilot lag-baser `_`/`0`–`9`) → ser «din» plass vs.
-    fiendens. Begge kan sameksistere. Gir umiddelbar lesbarhet for hvor man kan lande/fylle.
+- ✅ **Drivstoff-knapphet + lande-begrensning på TR-II-brett — GJORT (2026-06-12).** TR-II-kart
+  har nå `closedLanding`: landing KUN på pads (spawn/plattformer), alt annet terreng = Kaboom
+  (`onLandingPad`/`Ship.update`). Fuel hentes ved hovring nær **fuel-pods** (XPilot-koden) — pod
+  ved hver base + sprinklet over åpne celler (`POD_SPACING` i `convert_to_json`); «fyll på hvilken
+  som helst flate» fjernet → ekte drivstoff-press. Jf. memory [[drivstoff-og-liv]].
+  - ✅ **Marker lovlige landingsflater med farge — GJORT.** Tykk neon-strek på pad-overflaten:
+    hjem = spillerfarge, fuel = grønn, butikk/garasje = oransje (`renderMap`). XPilot-kart UTLEDER
+    markører fra spawns som står på flat grunn → samme tydelige «her er basen»-strek.
 
 - ✅ **«Fyll» veggene med organisk mycel-nettverk** — GJORT. `buildMycel` + `solidDepthField`
   i game.js: vener seedes fra vegg-kantene (BFS-dybde 1) og vokser INNOVER i solid (styrt av

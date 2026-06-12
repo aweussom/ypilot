@@ -111,8 +111,37 @@ revers/sideveis via `fx,fy`) → revers-gravitasjons-regioner; **syre-bad** (liq
 `renderMap` + radar. Radar er nå en alltid-tilgjengelig minimap med live `Radar`-toggle (bunnlinje).
 Nye tunbare i fane «Soner» (`zoneForce`/`acidShieldDrain`/`acidHullDamage`).
 
+**Bot-nivå + anti-selvmord ✅ (2026-06-11):** vanskelighetsgrad-velger **Enkel/Vanskelig/Nordlending**
+i bunnlinja (`BOT_LEVELS`-presets → `AI.aimError`/`fireChance`/`reactMult`; default Vanskelig;
+localStorage `ypilot.botLevel`, live). Anti-skip-selvmord (skip-kollisjon dreper begge): stor
+repulsjons-boble + TANGENTIAL head-on-utvike (konsistent regel → to bots passerer på hver sin side,
+`AI.shipAvoidDist/Force/shipDodge`). **Skjold = STØTFANGER** ved skip-kollisjon: er ETT skip
+beskyttet (skjold/invuln) spretter begge harmløst — skjold er ikke lenger et ramme-VÅPEN
+(kollisjons-handler i `create()`). TIE-eksos kommer nå ut bakover (panelene flyttet til sidene).
+
+**Radar → spider-sense ✅ (2026-06-11):** «Radar»-toggelen styrer nå BÅDE et hjørne-minimap
+(verdens-rom-forankret + motskalert 1/zoom → funker i fit OG scroll) OG kant-buer ved skjermkanten
+KUN mot trusler UTENFOR synsfeltet (de du ser er støy). Fiende-skip i fiendens farge (alltid på når
+off-screen, daler til `SENSE.shipFloor`), innkommende kuler i dus gul. `drawSpiderSense`/`SENSE`.
+
+**TR-II pads + lukket landing + fuel-pods ✅ (2026-06-11/12):** TR-II-kart har `closedLanding` →
+landing KUN på pads (spawn/plattformer), alt annet flatt terreng = **Kaboom** (`onLandingPad` i
+`Ship.update`; spawn-grace beskytter). Fuel hentes ved å hovre nær **fuel-pods** (XPilot-koden) —
+pod ved hver base + sprinklet over åpne celler (`POD_SPACING`); «fyll på hvilken som helst flate»
+fjernet. **Lande-/base-markører:** tykk neon-strek på pad-overflaten — hjem=spillerfarge, fuel=grønn,
+butikk/garasje=oransje; XPilot-kart UTLEDER markører fra spawns på flat grunn. `convert_to_json`
+eksporterer `pads`+`closedLanding`; TR-II-kart er `edgewrap:false` (lukkede arenaer).
+
+**Levende syre ✅ (2026-06-12):** syre-bassenget klippes til ÅPNE celler → følger kart-hulrommet
+(ikke en firkant over veggene). Animert skvulpende overflate + grønne sprut-partikler (m/tyngdekraft)
+ved skip inn/ut (fart-skalert), kuler som treffer overflaten (syra sluker kula → dekning), og
+eksplosjoner i syra. Soner tegnes med åpen-celle-fyll + retningspil. `acidSplash`/`drawLiquidSurface`.
+
+**Kart ✅:** fem TR-II 4-spiller-arenaer konvertert (ekolos4p, likvidius4p, metarola4p, sitimus4p,
+tropulus4p) + XPilot-utvalg. 2p-versjoner + Sitimus Express (race) bevisst utelatt. Publisert.
+
 **NESTE OPPGAVER:** lyd (utsatt til Fase 3 — Solstice-motor, memory `audio-fra-solstice`),
-«fyll vegg-innside»-RE-THINK (`TODO.md`), Fase 3 push-off/fraspark (`TODO.md`).
+«fyll vegg-innside»-RE-THINK (`TODO.md`), Fase 3 push-off/fraspark (`TODO.md`), evt. nettverks-MP.
 
 > **Stor-kart-begrensning (kjent):** scroll-kameraet sentrerer momentant på skipet, så
 > på wrap-kart vises tomrom utenfor kartkanten (ingen toroidal dobbel-rendering ennå).
