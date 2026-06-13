@@ -26,6 +26,19 @@ const PHYSICS = {
   // med vilje: et nyspawnet skip har full tank → høyest toppfart → kommer seg unna spawn-campere
   // (som har brent drivstoff og er tregere). 0 = av. [tunbar, Bevegelse]
   fuelBoost:    0.4,
+  // — Styring: mus + USB-kontroller (alternative input-moder, se CONTROL/makeMouseInput) —
+  // XPilot (UiTø-æraen) fikk mus-styring: musa dreier skipet. Moderne nettleser-ekvivalent er
+  // Pointer Lock — pekeren fanges/skjules og vi får RELATIVE bevegelses-delta (movementX), så
+  // svingen er «uendelig» som i XPilot (ingen skjermkant-klamp, ingen peker-warp å rote med).
+  mouseSens:    0.0035, // rad sving per px musbevegelse (movementX) — grunn-følsomhet. [tunbar, Styring]
+  mouseAccel:   0.0,    // ikke-lineær respons (peker-akselerasjon): effektiv = dx·(1 + accel·|dx|).
+                        //   0 = rein lineær; > 0 → raske flikk svinger uforholdsmessig mer, mens
+                        //   smådytt beholder finkontroll (sikting). [tunbar, Styring]
+  mouseSmooth:  0.0,    // respons-glatting (low-pass på svingen): 0 = rå/snappy, mot 0.9 = tung/jevn
+                        //   (demper skjelv, men føles tregere). Totalrotasjon bevares. [tunbar, Styring]
+  mouseInvert:  false,  // snu venstre/høyre på musa
+  padTurnSens:  0.9,    // andel av venstre-stikk-utslag → behandles som hold venstre/høyre (Dpad-likt)
+  padDeadzone:  0.25,   // dødsone på analog-stikk (unngå drift)
   // — Skyting —
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
@@ -1424,6 +1437,85 @@ function keyboardInput(keys) {
   });
 }
 
+// Mus-styring (XPilot UiTø-stil) via Pointer Lock. Musa dreier skipet; museknappene gir
+// gass/skudd; skjold + finjustering ligger på tastaturet. Pointer Lock skjuler pekeren og gir
+// RELATIVE movementX-delta som akkumuleres mellom poll → «uendelig» sving (ingen kant-klamp).
+// Returnerer samme {thrust,left,right,fire,shield}-grensesnitt + et ekstra `turn` (rå rad-delta).
+// Klikk på lerretet fanger musa; Esc slipper. Knapper: venstre = gass, høyre = skudd.
+// Tastatur (samme tangenter som P1) virker fortsatt parallelt — særlig S/↓ = skjold, W = gass.
+function makeMouseInput(scene, keys) {
+  const st = { accumX: 0, left: false, right: false, locked: false, smooth: 0 };
+  const canvas = scene.game.canvas;
+
+  const onMove = (e) => { if (st.locked) st.accumX += e.movementX || 0; };
+  const onDown = (e) => { if (e.button === 0) st.left = true; else if (e.button === 2) st.right = true; };
+  const onUp   = (e) => { if (e.button === 0) st.left = false; else if (e.button === 2) st.right = false; };
+  const onCtx  = (e) => e.preventDefault();   // ikke vis høyreklikk-meny (høyre = skudd)
+  const onLockChange = () => {
+    st.locked = document.pointerLockElement === canvas;
+    if (!st.locked) { st.left = st.right = false; }   // mistet fokus → slipp knapper
+    updateControlHint(st.locked);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mousedown', onDown);
+  document.addEventListener('mouseup', onUp);
+  canvas.addEventListener('contextmenu', onCtx);
+  document.addEventListener('pointerlockchange', onLockChange);
+  // Klikk på lerretet → fang musa (krever bruker-gest; kan ikke autostartes).
+  canvas.addEventListener('mousedown', () => {
+    if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
+  });
+  updateControlHint(false);
+
+  return () => {
+    const dx = st.accumX; st.accumX = 0;
+    const sens = PHYSICS.mouseSens * (PHYSICS.mouseInvert ? -1 : 1);
+    // Ikke-lineær respons (peker-akselerasjon): forsterk store utslag, behold finkontroll på små.
+    const raw = st.locked ? dx * (1 + PHYSICS.mouseAccel * Math.abs(dx)) * sens : 0;
+    // Respons-glatting (low-pass): bevarer totalrotasjon (DC-gain = 1), demper bare skjelv/jitter.
+    const a = PHYSICS.mouseSmooth;
+    st.smooth = a > 0 ? st.smooth * a + raw * (1 - a) : raw;
+    return {
+      thrust: st.left || keys.thrust.isDown,
+      left:  false,
+      right: false,
+      turn:  st.smooth,
+      fire:  st.right || keys.fire.isDown,
+      shield: keys.shield ? keys.shield.isDown : false,
+    };
+  };
+}
+
+// USB-kontroller (Xbox o.l.) via Gamepad API. Dpad venstre/høyre + venstre analog-stikk styrer
+// rotasjon (begge gjenbruker det vanlige left/right-løpet, så fart-boost-en gjelder). Knapper i
+// standard-mappingen: A (0) eller RT (7) = gass, RB (5) / X (2) = skudd, LB (4) / B (1) = skjold.
+// Tastaturet virker parallelt. Poller navigator.getGamepads() hvert kall (ingen events).
+function makeGamepadInput(scene, keys) {
+  return () => {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gp = null;
+    for (const p of pads) { if (p && p.connected) { gp = p; break; } }
+    const b = (i) => gp && gp.buttons[i] && gp.buttons[i].pressed;
+    const stickX = gp && gp.axes.length > 0 ? gp.axes[0] : 0;
+    const dz = PHYSICS.padDeadzone;
+    const padLeft  = b(14) || stickX < -PHYSICS.padTurnSens;   // Dpad-venstre / stikk hardt venstre
+    const padRight = b(15) || stickX >  PHYSICS.padTurnSens;
+    // Mildt stikk-utslag (mellom dødsone og terskel) gir en proporsjonal sving via `turn`.
+    let turn = 0;
+    if (gp && Math.abs(stickX) > dz && Math.abs(stickX) <= PHYSICS.padTurnSens)
+      turn = stickX * PHYSICS.turnRate;
+    return {
+      thrust: b(0) || b(7) || keys.thrust.isDown,
+      left:   padLeft  || keys.left.isDown,
+      right:  padRight || keys.right.isDown,
+      turn,
+      fire:   b(5) || b(2) || keys.fire.isDown,
+      shield: b(4) || b(1) || (keys.shield ? keys.shield.isDown : false),
+    };
+  };
+}
+
 // Velg de n spawnene som ligger lengst fra hverandre (for n=2: paret med størst avstand).
 // Hindrer at skip spawner oppå hverandre på kart med klyngede baser.
 function pickSpawns(spawns, n) {
@@ -1927,6 +2019,10 @@ class Ship {
       * (1 + PHYSICS.turnBoostLow * Math.max(0, 1 - sp0 / PHYSICS.turnBoostSpeed));
     if (input.left)  this.angle -= turn * dtScale;
     if (input.right) this.angle += turn * dtScale;
+    // Mus-styring: rå rotasjons-delta (radianer) akkumulert fra movementX siden forrige poll.
+    // Allerede basert på reell musbevegelse → frame-rate-uavhengig, IKKE * dtScale, og uavhengig
+    // av fart-boost-en over (musa svinger like presist ved alle farter, slik XPilot-musa gjorde).
+    if (input.turn) this.angle += input.turn;
 
     // Gass — newtonsk akselerasjon langs nesen. Krever drivstoff.
     const thrusting = input.thrust && this.fuel > 0;
@@ -2323,8 +2419,15 @@ class GameScene extends Phaser.Scene {
         label: human ? 'P' + (i + 1) : 'Bot ' + (i - humanCount + 1),
         keys: human ? humanKeyDefs[i] : null,
       });
-      if (human) this.humanKeys[i] = keyboardInput(humanKeyDefs[i]);
-      else ship.input = makeAIProvider(ship, this);
+      if (human) {
+        // Spiller 1 kan styres med mus eller USB-kontroller (CONTROL); andre mennesker = tastatur.
+        // Provideren er skip-uavhengig (leser global input-tilstand) → følger spilleren ved takeover.
+        let prov = keyboardInput(humanKeyDefs[i]);
+        if (i === 0 && CONTROL === 'mus')        prov = makeMouseInput(this, humanKeyDefs[0]);
+        else if (i === 0 && CONTROL === 'kontroller') prov = makeGamepadInput(this, humanKeyDefs[0]);
+        this.humanKeys[i] = prov;
+        ship.input = prov;
+      } else ship.input = makeAIProvider(ship, this);
       this.ships.push(ship);
     }
     // Skipet hvert menneske styrer akkurat nå (endres ved takeover).
@@ -2723,6 +2826,7 @@ async function boot() {
   setupNewbieToggle();
   setupRadarToggle();
   setupBotLevelControl();
+  setupControlSelect();
   setupLookControl();
   setupModeControl();
   buildTuningPanel();
@@ -2763,6 +2867,32 @@ function applyBotLevel(level) {
   const p = BOT_LEVELS[level] || BOT_LEVELS.vanskelig;
   AI.aimError = p.aimError; AI.fireChance = p.fireChance; AI.reactMult = p.reactMult;
   BOT_LEVEL = BOT_LEVELS[level] ? level : 'vanskelig';
+}
+
+// Styremåte for spiller 1: 'tastatur' (default), 'mus' (Pointer Lock) eller 'kontroller' (Gamepad).
+// Persistert; endring krever reload (provideren kobles i scene-create). Se makeMouseInput.
+const CONTROL_KEY = 'ypilot.control';
+let CONTROL = (() => { try { return localStorage.getItem(CONTROL_KEY) || 'tastatur'; } catch (e) { return 'tastatur'; } })();
+
+// Oppdaterer mus-hintet (vist når CONTROL='mus'). locked=true når pekeren er fanget.
+function updateControlHint(locked) {
+  const el = document.getElementById('control-hint');
+  if (!el) return;
+  el.style.display = CONTROL === 'mus' ? 'block' : 'none';
+  el.textContent = locked
+    ? 'Musa fanget · Esc slipper · venstreknapp = gass · høyre = skudd · S = skjold'
+    : 'Klikk i banen for å fange musa (styrer rotasjon)';
+}
+
+function setupControlSelect() {
+  const sel = document.getElementById('control-select');
+  if (!sel) return;
+  sel.value = CONTROL;
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem(CONTROL_KEY, sel.value); } catch (e) { /* privat modus */ }
+    location.reload();
+  });
+  updateControlHint(false);
 }
 
 // Look-modus: 'new' (organisk neon-glød, default) eller 'trad' (klassiske blokk-kanter).
@@ -2857,6 +2987,10 @@ const TUNING = [
   { g: 'Soner',     key: 'acidHull',      label: 'Syre-skrog',    min: 0,    max: 0.3,  step: 0.01,  get: () => PHYSICS.acidHullDamage, set: v => PHYSICS.acidHullDamage = +v },
   { g: 'Soner',     key: 'acidGrace',     label: 'Syre-grace',    min: 0,    max: 240,  step: 15,    get: () => PHYSICS.acidGrace,    set: v => PHYSICS.acidGrace = +v },
   { g: 'Soner',     key: 'acidRecover',   label: 'Syre-restitusjon',min: 0.5,max: 6,    step: 0.5,   get: () => PHYSICS.acidRecover,  set: v => PHYSICS.acidRecover = +v },
+  // — Styring (mus): følsomhet, ikke-lineær respons, glatting. Global (delt mellom fysikk-modi). —
+  { g: 'Styring',   key: 'mouseSens',     label: 'Mus-følsom',    min: 0.001,max: 0.012,step: 0.0005,get: () => PHYSICS.mouseSens,    set: v => PHYSICS.mouseSens = +v },
+  { g: 'Styring',   key: 'mouseAccel',    label: 'Mus-aksel',     min: 0,    max: 0.05, step: 0.002, get: () => PHYSICS.mouseAccel,   set: v => PHYSICS.mouseAccel = +v },
+  { g: 'Styring',   key: 'mouseSmooth',   label: 'Mus-glatting',  min: 0,    max: 0.9,  step: 0.05,  get: () => PHYSICS.mouseSmooth,  set: v => PHYSICS.mouseSmooth = +v },
 ];
 
 // ── Fysikk-modus (XPilot / TR-II) ──────────────────────────────────────────

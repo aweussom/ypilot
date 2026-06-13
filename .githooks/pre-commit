@@ -1,0 +1,31 @@
+#!/bin/sh
+# YPilot pre-commit: nudge når lokal gren ligger BAK oppstrøms (multi-maskin-arbeidsflyt).
+#
+# Hvorfor: prosjektet jobbes fra flere maskiner. Glemmer du `git pull` og begynner å
+# jobbe, ender du med ucommittede endringer (eller en commit) på en foreldet base — da
+# kreves en merge/rebase for å lande arbeidet (slik vi opplevde 2026-06-13). Dette hooket
+# fanger det ved commit-tid.
+#
+# Oppførsel: BLOKKERER ALDRI. Skriver kun en advarsel hvis vi er bak. For å holde commits
+# raske og offline-trygge sammenligner vi mot SIST KJENTE oppstrøms-ref og oppdaterer
+# kunnskapen i bakgrunnen til neste gang (fire-and-forget). Første commit etter et maskin-
+# bytte kan derfor «se» 0 bak til bakgrunns-fetchen er ferdig; neste commit advarer.
+#
+# Installeres via:  git config core.hooksPath .githooks   (én gang per klon/maskin)
+
+upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) || exit 0
+
+behind=$(git rev-list --count "HEAD..$upstream" 2>/dev/null || echo 0)
+
+# Oppdater oppstrøms-kunnskap i bakgrunnen (venter ikke → ingen treghet, ingen heng offline).
+git fetch --quiet >/dev/null 2>&1 &
+
+if [ "${behind:-0}" -gt 0 ]; then
+  echo "" >&2
+  echo "  ⚠  Lokal gren ligger $behind commit(er) BAK $upstream." >&2
+  echo "     Du committer på en muligens foreldet base." >&2
+  echo "     Anbefalt:  git stash  →  git pull --rebase  →  git stash pop  →  commit på nytt." >&2
+  echo "     (Committen går likevel igjennom — dette er kun en advarsel.)" >&2
+  echo "" >&2
+fi
+exit 0

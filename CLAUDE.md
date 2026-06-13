@@ -140,6 +140,19 @@ eksplosjoner i syra. Soner tegnes med åpen-celle-fyll + retningspil. `acidSplas
 **Kart ✅:** fem TR-II 4-spiller-arenaer konvertert (ekolos4p, likvidius4p, metarola4p, sitimus4p,
 tropulus4p) + XPilot-utvalg. 2p-versjoner + Sitimus Express (race) bevisst utelatt. Publisert.
 
+**Mus- + kontroller-styring ✅ (2026-06-13):** alternativ styremåte for spiller 1, velges i bunnlinja
+(«Styring»: Tastatur/Mus/Kontroller, persistert `ypilot.control`, reload ved bytte). **Mus** (XPilot
+UiTø-stil): Pointer Lock fanger+skjuler pekeren og gir RELATIVE `movementX`-delta → «uendelig» sving
+uten kant-klamp (`makeMouseInput`). Klikk i banen fanger musa, Esc slipper; hint vises nederst
+(`updateControlHint`/`#control-hint`). Knapper: venstre = gass, høyre = skudd; tastaturet (S = skjold,
+W/Space) virker parallelt. Musa svinger via et nytt `input.turn` (rå rad-delta i `Ship.update`, IKKE
+* dtScale, uavhengig av fart-boost). **Kontroller** (Gamepad API, `makeGamepadInput`, polles per frame):
+Dpad ←/→ + venstre stikk = rotasjon (mildt utslag → proporsjonal `turn`), A/RT = gass, RB/X = skudd,
+LB/B = skjold. Begge gjenbruker `{thrust,left,right,fire,shield}`-sømmen → følger spilleren ved takeover.
+Egen GLOBAL «Styring»-tuning-fane: **Mus-følsom** (`mouseSens`), **Mus-aksel** (`mouseAccel`,
+ikke-lineær peker-akselerasjon), **Mus-glatting** (`mouseSmooth`, low-pass; bevarer totalrotasjon).
+`mouseInvert` i kode. Defaults: aksel/glatting = 0 (rein, snappy XPilot-respons).
+
 **NESTE OPPGAVER:** lyd (utsatt til Fase 3 — Solstice-motor, memory `audio-fra-solstice`),
 «fyll vegg-innside»-RE-THINK (`TODO.md`), Fase 3 push-off/fraspark (`TODO.md`), evt. nettverks-MP.
 
