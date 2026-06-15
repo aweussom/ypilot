@@ -106,6 +106,38 @@
       cursor: pointer;
     }
     #settings .sep { color: rgba(68, 136, 255, 0.4); }
+    /* FPS-teller — nederst til venstre (tomt hjørne), vises kun når «FPS» er på */
+    #fps-meter {
+      position: absolute; bottom: 10px; left: 10px;
+      display: none; padding: 5px 9px; font-size: 12px; line-height: 1.35;
+      color: #00ffff; background: rgba(5, 6, 10, 0.6);
+      border: 1px solid rgba(68, 136, 255, 0.35); border-radius: 4px;
+      text-shadow: 0 0 6px currentColor; pointer-events: none; user-select: none;
+      font-variant-numeric: tabular-nums;
+    }
+    #fps-meter .fps-now { font-size: 16px; font-weight: bold; }
+    #fps-meter .fps-stats { color: #4488ff; font-size: 11px; }
+    /* Tavle for aktivt brett — øverst til venstre under P1-HUD, vises kun når «Tavle» er på */
+    #scoreboard {
+      position: absolute; top: 86px; left: 10px;
+      display: none; padding: 6px 10px; min-width: 132px;
+      background: rgba(5, 6, 10, 0.62);
+      border: 1px solid rgba(68, 136, 255, 0.35); border-radius: 5px;
+      font-size: 12px; user-select: none; pointer-events: none;
+      font-variant-numeric: tabular-nums;
+    }
+    #scoreboard .sb-title {
+      color: #4488ff; font-size: 10px; letter-spacing: 1.5px;
+      text-transform: uppercase; margin-bottom: 4px; opacity: 0.8;
+    }
+    #scoreboard .sb-row {
+      display: flex; align-items: center; gap: 7px; padding: 1px 0;
+      text-shadow: 0 0 5px currentColor;
+    }
+    #scoreboard .sb-row.dead { opacity: 0.38; text-shadow: none; }
+    #scoreboard .sb-name { flex: 1; white-space: nowrap; }
+    #scoreboard .sb-kills { font-weight: bold; min-width: 1.4em; text-align: right; }
+    #scoreboard .sb-lives { font-size: 9px; color: #ff5577; letter-spacing: 1px; min-width: 3.2em; }
     /* Mus-styring-hint — diskret linje over bunnlinja, vises kun i mus-modus */
     #control-hint {
       position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%);
@@ -184,6 +216,10 @@
   </div>
   <!-- Mus-styring: hint nederst-midt (vises kun når Styring=Mus). Toggles av updateControlHint. -->
   <div id="control-hint"></div>
+  <!-- FPS-teller (toggle «FPS»): nåverdi + min/maks/snitt. Nederst til venstre. -->
+  <div id="fps-meter"></div>
+  <!-- Tavle for aktivt brett (toggle «Tavle»): alle skip, drep + liv, sortert. Øverst til venstre. -->
+  <div id="scoreboard"></div>
   <div id="settings">
     <label for="map-select">Kart</label>
     <select id="map-select"></select>
@@ -197,6 +233,10 @@
     <label class="ai"><input type="checkbox" id="newbie-toggle" autocomplete="off"> Newbie</label>
     <span class="sep">·</span>
     <label class="ai"><input type="checkbox" id="radar-toggle" autocomplete="off"> Radar</label>
+    <span class="sep">·</span>
+    <label class="ai"><input type="checkbox" id="scoreboard-toggle" autocomplete="off"> Tavle</label>
+    <span class="sep">·</span>
+    <label class="ai"><input type="checkbox" id="fps-toggle" autocomplete="off"> FPS</label>
     <span class="sep">·</span>
     <label for="control-select">Styring</label>
     <select id="control-select">

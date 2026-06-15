@@ -2498,8 +2498,20 @@ class GameScene extends Phaser.Scene {
     this.winTimer = 0;            // >0 = overlevelses-vindu pågår (siste skip må overleve)
     this.pendingWinner = null;
 
+    // FPS-teller + tavle (DOM-overlays, styres av SHOW_FPS/SHOW_SCOREBOARD).
+    this.fpsMeter = document.getElementById('fps-meter');
+    this.scoreboardEl = document.getElementById('scoreboard');
+    this.hudFrame = 0;            // teller for å throttle DOM-skriving (tavle ~4×/s)
+    this.resetFpsStats();
+
     // R for ny runde etter game over.
     this.input.keyboard.on('keydown-R', () => { if (this.over) location.reload(); });
+  }
+
+  // Nullstiller FPS-statistikken (ny måleøkt). `warm` teller ned oppstarts-frames vi hopper
+  // over før min/maks/snitt registreres (laste-spiken ville ellers sette en falsk min).
+  resetFpsStats() {
+    this.fps = { min: Infinity, max: 0, sum: 0, count: 0, warm: 45 };
   }
 
   // Stiller kameraet etter modus. Fit: zoom for å vise hele kartet, sentrert.
@@ -2820,6 +2832,58 @@ class GameScene extends Phaser.Scene {
         ? this.pendingWinner.label + ' — OVERLEV! ' + (this.winTimer / 60).toFixed(1) + 's'
         : 'Skip igjen: ' + this.ships.filter(s => !s.eliminated).length;
     }
+
+    this.hudFrame++;
+    this.updateFpsMeter(delta);
+    this.updateScoreboard();
+  }
+
+  // FPS-teller: nåverdi + min/maks/snitt over måleøkta (etter oppstarts-warmup). Bruker Phasers
+  // jevnede actualFps når tilgjengelig, ellers en EMA av delta. Skriver DOM ~6×/s (ikke hver frame).
+  updateFpsMeter(delta) {
+    const el = this.fpsMeter;
+    if (!el) return;
+    if (!SHOW_FPS) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
+    const inst = 1000 / Math.max(1, delta);
+    this.fpsEMA = this.fpsEMA ? this.fpsEMA * 0.92 + inst * 0.08 : inst;
+    const fps = (this.game.loop && this.game.loop.actualFps) || this.fpsEMA;
+    const f = this.fps;
+    if (f.warm > 0) f.warm--;            // hopp over laste-spiken før vi registrerer min/maks/snitt
+    else {
+      if (fps < f.min) f.min = fps;
+      if (fps > f.max) f.max = fps;
+      f.sum += fps; f.count++;
+    }
+    if (this.hudFrame % 10 !== 0) return;
+    const now = Math.round(fps);
+    const avg = f.count ? Math.round(f.sum / f.count) : now;
+    const min = f.min === Infinity ? now : Math.round(f.min);
+    const max = Math.round(f.max) || now;
+    el.style.display = 'block';
+    el.innerHTML = '<span class="fps-now">' + now + ' FPS</span>'
+      + '<div class="fps-stats">snitt ' + avg + ' · min ' + min + ' · maks ' + max + '</div>';
+  }
+
+  // Tavle for aktivt brett: alle skip sortert på flest drep (levende før ute), farget per skip.
+  // Skriver DOM ~4×/s (innholdet endres sjelden). Tittel = kartnavn.
+  updateScoreboard() {
+    const el = this.scoreboardEl;
+    if (!el) return;
+    if (!SHOW_SCOREBOARD) { if (el.style.display !== 'none') el.style.display = 'none'; return; }
+    if (this.hudFrame % 15 !== 0) return;
+    const ships = this.ships.slice().sort((a, b) =>
+      (b.kills - a.kills) || (a.eliminated - b.eliminated));
+    let html = '<div class="sb-title">' + (this.map.name || 'Brett') + '</div>';
+    for (const s of ships) {
+      const col = '#' + (s.color >>> 0).toString(16).padStart(6, '0');
+      const lives = s.eliminated ? 'ute' : '♥'.repeat(Math.max(0, s.lives));
+      html += '<div class="sb-row' + (s.eliminated ? ' dead' : '') + '" style="color:' + col + '">'
+        + '<span class="sb-name">' + s.label + '</span>'
+        + '<span class="sb-kills">' + s.kills + '</span>'
+        + '<span class="sb-lives">' + lives + '</span></div>';
+    }
+    el.style.display = 'block';
+    el.innerHTML = html;
   }
 }
 
@@ -2850,6 +2914,8 @@ async function boot() {
   setupAIToggle();
   setupNewbieToggle();
   setupRadarToggle();
+  setupFpsToggle();
+  setupScoreboardToggle();
   setupBotLevelControl();
   setupControlSelect();
   setupLookControl();
@@ -2878,6 +2944,14 @@ let NEWBIE = (() => { try { return localStorage.getItem(NEWBIE_KEY) !== 'off'; }
 // Radar (minimap) — default PÅ; lagres 'off' når slått av. Leses live av minimap-laget.
 const RADAR_KEY = 'ypilot.radar';
 let RADAR = (() => { try { return localStorage.getItem(RADAR_KEY) !== 'off'; } catch (e) { return true; } })();
+
+// FPS-teller (nåverdi + min/maks/snitt) — default AV. Leses live i GameScene.update.
+const FPS_KEY = 'ypilot.fps';
+let SHOW_FPS = (() => { try { return localStorage.getItem(FPS_KEY) === 'on'; } catch (e) { return false; } })();
+
+// Tavle for aktivt brett (alle skip, drep + liv) — default PÅ. Leses live i GameScene.update.
+const SCOREBOARD_KEY = 'ypilot.scoreboard';
+let SHOW_SCOREBOARD = (() => { try { return localStorage.getItem(SCOREBOARD_KEY) !== 'off'; } catch (e) { return true; } })();
 
 // Bot-vanskelighetsgrad. Presets skriver inn i AI-knottene (aimError/fireChance/reactMult). Klar
 // for framtidig utvidelse (flere knotter pr. nivå). «Nordlending» = nådeløs (dagens hardeste).
@@ -3248,6 +3322,33 @@ function setupRadarToggle() {
     try { localStorage.setItem(RADAR_KEY, RADAR ? 'on' : 'off'); } catch (e) { /* privat modus */ }
     // Begge radar-lag styres av RADAR: minimap skjules/vises her; spider-sense gates i drawSpiderSense().
     if (GAME_SCENE && GAME_SCENE.minimap) GAME_SCENE.minimap.setVisible(RADAR);
+  });
+}
+
+// FPS-toggle. LIVE — viser/skjuler telleren og nullstiller statistikken (ny måleøkt) ved på-slag.
+function setupFpsToggle() {
+  const cb = document.getElementById('fps-toggle');
+  if (!cb) return;
+  cb.checked = SHOW_FPS;
+  cb.addEventListener('change', () => {
+    SHOW_FPS = cb.checked;
+    try { localStorage.setItem(FPS_KEY, SHOW_FPS ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+    if (GAME_SCENE) GAME_SCENE.resetFpsStats();        // fersk min/maks/snitt hver gang den slås på
+    const el = document.getElementById('fps-meter');
+    if (el && !SHOW_FPS) el.style.display = 'none';
+  });
+}
+
+// Tavle-toggle. LIVE — viser/skjuler scoreboard-laget umiddelbart.
+function setupScoreboardToggle() {
+  const cb = document.getElementById('scoreboard-toggle');
+  if (!cb) return;
+  cb.checked = SHOW_SCOREBOARD;
+  cb.addEventListener('change', () => {
+    SHOW_SCOREBOARD = cb.checked;
+    try { localStorage.setItem(SCOREBOARD_KEY, SHOW_SCOREBOARD ? 'on' : 'off'); } catch (e) { /* privat modus */ }
+    const el = document.getElementById('scoreboard');
+    if (el && !SHOW_SCOREBOARD) el.style.display = 'none';
   });
 }
 
