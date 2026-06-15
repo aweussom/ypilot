@@ -37,8 +37,7 @@ const PHYSICS = {
   mouseSmooth:  0.0,    // respons-glatting (low-pass på svingen): 0 = rå/snappy, mot 0.9 = tung/jevn
                         //   (demper skjelv, men føles tregere). Totalrotasjon bevares. [tunbar, Styring]
   mouseInvert:  false,  // snu venstre/høyre på musa
-  padTurnSens:  0.9,    // andel av venstre-stikk-utslag → behandles som hold venstre/høyre (Dpad-likt)
-  padDeadzone:  0.25,   // dødsone på analog-stikk (unngå drift)
+  padDeadzone:  0.18,   // dødsone på analog-stikk (unngå drift); under denne = nøytral
   // — Skyting —
   bulletSpeed:  14,     // px/frame
   bulletLife:   120,    // frames (~2s)
@@ -1487,29 +1486,50 @@ function makeMouseInput(scene, keys) {
   };
 }
 
-// USB-kontroller (Xbox o.l.) via Gamepad API. Dpad venstre/høyre + venstre analog-stikk styrer
-// rotasjon (begge gjenbruker det vanlige left/right-løpet, så fart-boost-en gjelder). Knapper i
-// standard-mappingen: A (0) eller RT (7) = gass, RB (5) / X (2) = skudd, LB (4) / B (1) = skjold.
-// Tastaturet virker parallelt. Poller navigator.getGamepads() hvert kall (ingen events).
+// USB-kontroller (Xbox o.l.) via Gamepad API. Venstre analog-stikk → proporsjonal `turnAxis`
+// [-1..1] (jevn respons; Ship.update skalerer den med den FART-BOOSTEDE sving-raten, så den er
+// like responsiv som tastatur). D-pad → digital venstre/høyre. Knapper (standard-mapping):
+// A (0) / RT (7) = gass, RB (5) / X (2) = skudd, LB (4) / B (1) = skjold. Tastatur parallelt.
+//
+// Chrome eksponerer ikke en pad før den sender input («vekke»-sperre, personvern). Noen padder
+// rapporterer d-pad som en HATT-AKSE i stedet for knapper 14/15 — vekkes da kun av knappetrykk,
+// og leses ikke av b(14/15). Vi sjekker derfor BÅDE knapper OG en hatt-akse (siste akse, som
+// ofte koder d-pad), så d-pad virker uansett mapping. `gamepadconnected` logger oppvåkning
+// (åpne konsollen for å se din pads id/mapping/knapper/akser — nyttig diagnostikk).
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('gamepadconnected', (e) => {
+    console.log('[YPilot] Kontroller koblet til:', e.gamepad.id,
+      '| mapping:', e.gamepad.mapping || '(ikke-standard)',
+      '| knapper:', e.gamepad.buttons.length, '| akser:', e.gamepad.axes.length);
+  });
+}
 function makeGamepadInput(scene, keys) {
   return () => {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let gp = null;
     for (const p of pads) { if (p && p.connected) { gp = p; break; } }
-    const b = (i) => gp && gp.buttons[i] && gp.buttons[i].pressed;
-    const stickX = gp && gp.axes.length > 0 ? gp.axes[0] : 0;
+    const b = (i) => !!(gp && gp.buttons[i] && gp.buttons[i].pressed);
+    const ax = (i) => (gp && gp.axes.length > i ? gp.axes[i] : 0);
     const dz = PHYSICS.padDeadzone;
-    const padLeft  = b(14) || stickX < -PHYSICS.padTurnSens;   // Dpad-venstre / stikk hardt venstre
-    const padRight = b(15) || stickX >  PHYSICS.padTurnSens;
-    // Mildt stikk-utslag (mellom dødsone og terskel) gir en proporsjonal sving via `turn`.
-    let turn = 0;
-    if (gp && Math.abs(stickX) > dz && Math.abs(stickX) <= PHYSICS.padTurnSens)
-      turn = stickX * PHYSICS.turnRate;
+
+    // D-pad: standard-mapping = knapper 14 (V) / 15 (H). Fallback: hatt-akse (mange padder
+    // legger d-pad på siste akse; verdier ≈ ±0.7..1.0). Tar fortegnet når den er klart utenfor null.
+    let dx = (b(15) ? 1 : 0) - (b(14) ? 1 : 0);
+    if (dx === 0 && gp && gp.axes.length > 4) {
+      const hat = ax(gp.axes.length - 1);            // ofte d-pad-X / hatt
+      if (hat < -0.5) dx = -1; else if (hat > 0.5) dx = 1;
+    }
+
+    // Venstre stikk → sving-akse, dødsone-remappet til 0..1 (jevn fra kanten av dødsonen).
+    const sx = ax(0);
+    let turnAxis = 0;
+    if (Math.abs(sx) > dz) turnAxis = (sx - Math.sign(sx) * dz) / (1 - dz);
+
     return {
       thrust: b(0) || b(7) || keys.thrust.isDown,
-      left:   padLeft  || keys.left.isDown,
-      right:  padRight || keys.right.isDown,
-      turn,
+      left:   dx < 0 || keys.left.isDown,
+      right:  dx > 0 || keys.right.isDown,
+      turnAxis,
       fire:   b(5) || b(2) || keys.fire.isDown,
       shield: b(4) || b(1) || (keys.shield ? keys.shield.isDown : false),
     };
@@ -2023,6 +2043,9 @@ class Ship {
     // Allerede basert på reell musbevegelse → frame-rate-uavhengig, IKKE * dtScale, og uavhengig
     // av fart-boost-en over (musa svinger like presist ved alle farter, slik XPilot-musa gjorde).
     if (input.turn) this.angle += input.turn;
+    // Analog stikk (kontroller): proporsjonal sving-akse [-1..1] skalert med SAMME fart-boostede
+    // rate som tastatur → like responsiv (fullt utslag = full sving), men finkontroll nær null.
+    if (input.turnAxis) this.angle += input.turnAxis * turn * dtScale;
 
     // Gass — newtonsk akselerasjon langs nesen. Krever drivstoff.
     const thrusting = input.thrust && this.fuel > 0;
@@ -2382,13 +2405,15 @@ class GameScene extends Phaser.Scene {
 
     // Input — poll hver frame (ikke events), så begge spillere kan holde taster.
     const kb = this.input.keyboard;
-    kb.addCapture('SPACE,UP,DOWN,LEFT,RIGHT');
-    const keys = kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SPACE,ENTER');
+    kb.addCapture('SPACE,ENTER,SHIFT,UP,DOWN,LEFT,RIGHT,FORWARD_SLASH');
+    const keys = kb.addKeys('A,S,SHIFT,SPACE,ENTER,UP,DOWN,LEFT,RIGHT,FORWARD_SLASH');
 
     // Free-for-all: GAME.shipCount skip. Første `humanCount` er menneske-styrt
     // (tastatur), resten bots. AI-toggle PÅ = bare P1 (mot bots).
-    // P1: W gass / A,D rotér / S skjold (Fase 2) / SPACE fyr.
-    // P2: ↑ gass / ←,→ rotér / ↓ skjold (Fase 2) / ENTER fyr.
+    // AUTENTISK XPILOT-LAYOUT (UiTø-stock-taster):
+    // P1: A,S rotér / Shift gass / RETURN fyr / SPACE skjold.
+    // P2 (2-spiller lokalt): ←,→ rotér / ↑ gass / «/» fyr / ↓ skjold — Return er P1s,
+    //     så P2 skyter med «/» (ved siste piltast) for å unngå kollisjon på delt tastatur.
     const aiOn = readAIOn();
     // Antall skip skaleres med kartets størrelse (større kart → flere skip), MEN aldri
     // flere enn distinkte spawn-punkter — ellers stables skip på samme base og dør
@@ -2400,8 +2425,8 @@ class GameScene extends Phaser.Scene {
     const humanCount = Math.min(shipCount, aiOn ? 1 : GAME.humans);
 
     const humanKeyDefs = [
-      { thrust: keys.W,  left: keys.A,    right: keys.D,     fire: keys.SPACE, shield: keys.S },
-      { thrust: keys.UP, left: keys.LEFT, right: keys.RIGHT, fire: keys.ENTER, shield: keys.DOWN },
+      { thrust: keys.SHIFT, left: keys.A,    right: keys.S,     fire: keys.ENTER,         shield: keys.SPACE },
+      { thrust: keys.UP,    left: keys.LEFT, right: keys.RIGHT, fire: keys.FORWARD_SLASH, shield: keys.DOWN  },
     ];
     const palette = [COLORS.p1, COLORS.p2, 0xffcc33, 0x66ff66, 0xff6688, 0xaa88ff, 0xffffff, 0xff8844];
 
@@ -2880,7 +2905,7 @@ function updateControlHint(locked) {
   if (!el) return;
   el.style.display = CONTROL === 'mus' ? 'block' : 'none';
   el.textContent = locked
-    ? 'Musa fanget · Esc slipper · venstreknapp = gass · høyre = skudd · S = skjold'
+    ? 'Musa fanget · Esc slipper · venstreknapp = gass · høyre = skudd · Space = skjold'
     : 'Klikk i banen for å fange musa (styrer rotasjon)';
 }
 
