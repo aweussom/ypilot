@@ -3028,7 +3028,14 @@ const modeTuningKey = mode => TUNING_KEY + '.' + mode;     // ypilot.tuning.xpil
 // Preset-DELTAER fra kode-defaults — kun det vi vet skiller spillene. Resten arver kode-default
 // og finjusteres per modus via sliderne (lagres per modus). Fyll på flere forskjeller etter hvert.
 const PRESETS = {
-  xpilot: { fireCooldown: 11, bulletKnockback: 0   },   // klassisk: moderat takt, kuler dytter ikke
+  // XPilot: klassisk — moderat skuddtakt, kuler dytter ikke. + kvikkere/strammere flygefølelse enn
+  // TR-II (Tommys tuning bakt inn 2026-06-15): raskere toppfart, skarpere grunn-sving, mindre lav-
+  // farts-pivot-boost, mer drag, sterkere drivstoff-boost. TR-II = ren PHYSICS-baseline (ingen
+  // Bevegelse-delta) + tettere skuddstråle med tydelig dytt.
+  xpilot: {
+    fireCooldown: 11, bulletKnockback: 0,
+    thrustForce: 0.39, turnRate: 0.075, turnBoostLow: 0.6, maxSpeed: 10, drag: 0.972, fuelBoost: 0.55,
+  },
   trii:   { fireCooldown: 6,  bulletKnockback: 0.7 },   // TR-II: tett skuddstråle + tydelig dytt
 };
 
