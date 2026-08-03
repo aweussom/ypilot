@@ -1,0 +1,20 @@
+# Memory index
+- [Lean on Phaser](lean-on-phaser.md) — prefer Phaser built-ins; only hand-roll the physics/collision tuning knobs
+- [Norsk prosjekt](norsk-prosjekt.md) — YPilot: all dokumentasjon og kommentarer på norsk (README-intro på engelsk)
+- [Neon-look (solstice)](neon-look-solstice.md) — neon-estetikk referanse: solstice-prosjektet + glød-teknikk
+- [Phaser-versjon](phaser-versjon.md) — YPilot på Phaser 4.x; lokal gitignorert vendor/phaser som referanse
+- [Kollisjons-følelse](kollisjons-folelse.md) — XPilot skjold-bounce + Turboraketti rakett-push-off + rakettstråle-som-våpen (kjerne-mekanikk)
+- [Gravitasjon-tuning](gravitasjon-tuning.md) — justerbar slider 0–0.50 (persistert); invariant: gravitasjon ≤ det strålen kan stoppe
+- [Levende kart](levende-kart.md) — fremtid: last XPilot-maps, men la polygonene bli organiske/gro (uavklart)
+- [XPilot kartformat](xpilot-kartformat.md) — ekte format er ASCII block-grid, ikke linjesegmenter; full tegn-legende + 130 kart lastet ned
+- [Kart-navigator](kart-navigator.md) — Fase 2: kart-velger med terningkast-rating, score-sortering (1 under uvurderte) + preview
+- [AI-spiller](ai-spiller.md) — Fase 2 (prioritert): inputProvider-sømpunkt + AI; enriching = on-device Gemini Nano (dev.to)
+- [Lokal vs nettverk-kart](lokal-vs-nettverk-kart.md) — lokal 2-spiller kun små kart (fit-til-skjerm); store kart = kun nettverk
+- [Audio fra solstice](audio-fra-solstice.md) — Fase 2-lyd: gjenbruk Solstice lydmotor + nye SFX
+- [Sky-lagring (tabtabtab)](sky-lagring-tabtabtab.md) — framtid: Google-lagring av innstillinger/highscores, stjel kode fra tabtabtab
+- [Drivstoff og liv](drivstoff-og-liv.md) — én ressurs «drivstoff», 3 liv, auto-fylling ved hovring + landing
+- [Våpen](vaapen.md) — framtid: mitraljøse m/ rekyl + tung «mine»-sky (Turboraketti); rekyl = Newton 3
+- [TRII feel over look](trii-feel-over-look.md) — TRII-kart-konvertering: fang topologi + tyngdekraft-flyt, ikke pixel-look
+- [Personlig XPilot-kobling](personlig-xpilot-kobling.md) — Tommy kjenner personlig XPilot-utviklerne + Tromsø/FAST-kullet (Schouten, Stabell, Jensen, Krogstad, Marthinussen)
+- [YPilot navn-lore](ypilot-navn-lore.md) — navnet = «Y etter X» + «Why-Pilot» nostalgi-blunk (til README/about)
+- [Calvin & Hobbes-brettet](calvin-hobbes-brettet.md) — Tommy lagde det berømte C&H Dancing XPilot-brettet ~1992 ved UiT
